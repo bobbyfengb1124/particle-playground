@@ -1,0 +1,46 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`particle spawn, integration, and fade/expiry > spawns particles at the click point and they drift deterministically 1`] = `
+[
+  {
+    "age": 0.167,
+    "slot": 0,
+    "vx": 7.884,
+    "vy": -20.672,
+    "x": 101.314,
+    "y": 96.555,
+  },
+  {
+    "age": 0.167,
+    "slot": 1,
+    "vx": 28.53,
+    "vy": 41.401,
+    "x": 104.755,
+    "y": 106.9,
+  },
+  {
+    "age": 0.167,
+    "slot": 2,
+    "vx": 34.266,
+    "vy": 42.572,
+    "x": 105.711,
+    "y": 107.095,
+  },
+  {
+    "age": 0.167,
+    "slot": 3,
+    "vx": -13.528,
+    "vy": 40.179,
+    "x": 97.745,
+    "y": 106.696,
+  },
+  {
+    "age": 0.167,
+    "slot": 4,
+    "vx": 14.52,
+    "vy": 18.026,
+    "x": 102.42,
+    "y": 103.004,
+  },
+]
+`;

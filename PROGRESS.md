@@ -3,7 +3,7 @@
 Build plan: one step at a time, in order. Each step is implemented, tested (`npm test` + browser verification against its own spec testing criteria), committed, then paused for go-ahead before the next.
 
 - [x] **Step 0 — Environment setup**: Vite + TypeScript + Vitest scaffold, `git init`, first commit.
-- [ ] **Step 1 — Render loop & particle emitter**: canvas render loop, click-spawn particles with position/velocity/acceleration integration, fade-out + expiry.
+- [x] **Step 1 — Render loop & particle emitter**: canvas render loop, click-spawn particles with position/velocity/acceleration integration, fade-out + expiry.
 - [ ] **Step 2 — Forces**: gravity, adjustable wind, drag, edge/floor bounce with damping.
 - [ ] **Step 3 — Falling sand**: CA grid (empty/sand), falling rule, ordered/double-buffered tick.
 - [ ] **Step 4 — Liquids & stone**: water (spreads to level), oil (floats on water), stone (immovable).
