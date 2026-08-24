@@ -1,5 +1,14 @@
 import { ObjectPool } from "../core/ObjectPool";
+import type { Bounds } from "./collisions";
+import { applyBoundsCollision } from "./collisions";
+import { applyDrag, applyGravity, applyWind } from "./forces";
 import { Particle } from "./Particle";
+
+export interface ParticleEnvironment {
+  gravity: number;
+  wind: number;
+  bounds: Bounds;
+}
 
 export interface ParticleInit {
   x: number;
@@ -53,12 +62,21 @@ export class ParticleSystem {
     return p;
   }
 
-  update(dt: number): void {
+  update(dt: number, env: ParticleEnvironment): void {
     this.pool.forEachActive((p) => {
+      p.ax = 0;
+      p.ay = 0;
+      applyGravity(p, env.gravity);
+      applyWind(p, env.wind);
+      applyDrag(p);
+
       p.vx += p.ax * dt;
       p.vy += p.ay * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
+
+      applyBoundsCollision(p, env.bounds);
+
       p.age += dt;
     });
     this.pool.releaseIf((p) => p.age >= p.lifespan);
