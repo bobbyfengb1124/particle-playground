@@ -1,0 +1,32 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0b0d10;
+  color: #e8e8e8;
+  font-family: system-ui, sans-serif;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+}
+
+#scene {
+  background: #000;
+  border: 1px solid #333;
+  touch-action: none;
+}
+
+#overlay {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
