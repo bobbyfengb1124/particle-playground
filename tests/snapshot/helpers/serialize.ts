@@ -1,3 +1,5 @@
+import type { Grid } from "../../../src/grid/Grid";
+import { MATERIALS } from "../../../src/grid/materials";
 import type { ParticleSystem } from "../../../src/particles/ParticleSystem";
 
 interface SerializedParticle {
@@ -28,4 +30,17 @@ export function serializeParticles(system: ParticleSystem): SerializedParticle[]
 function round(n: number, decimals = 3): number {
   const factor = 10 ** decimals;
   return Math.round(n * factor) / factor;
+}
+
+/** ASCII-art grid snapshot: one character per material per cell, human-diffable in review. */
+export function serializeGrid(grid: Grid): string {
+  const rows: string[] = [];
+  for (let y = 0; y < grid.height; y++) {
+    let row = "";
+    for (let x = 0; x < grid.width; x++) {
+      row += MATERIALS[grid.get(x, y)].symbol;
+    }
+    rows.push(row);
+  }
+  return rows.join("\n");
 }

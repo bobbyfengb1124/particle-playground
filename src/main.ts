@@ -1,6 +1,7 @@
 import "./style.css";
 import { Simulation } from "./app/Simulation";
 import { createFixedTimestepLoop } from "./core/Clock";
+import { Material } from "./grid/materials";
 import { PointerInput } from "./input/PointerInput";
 import { createOverlay } from "./ui/Overlay";
 
@@ -14,6 +15,12 @@ const ctx = canvas.getContext("2d");
 if (!ctx) throw new Error("2d context unavailable");
 
 const sim = new Simulation({ width: canvas.width, height: canvas.height, seed: 1 });
+
+// Temporary Step 3 demo seed — matches the spec's own "programmatically fill a
+// vertical line of sand cells near the top" test setup, so there's something
+// to look at before Step 6 adds real painting.
+const seedColumn = Math.floor(sim.grid.width / 2);
+for (let y = 0; y < 10; y++) sim.grid.setMaterial(seedColumn, y, Material.SAND);
 
 const input = new PointerInput(canvas);
 input.onDown((point) => sim.spawnParticlesAt(point.x, point.y, 8));
