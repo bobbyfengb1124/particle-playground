@@ -43,6 +43,31 @@ for (let y = 0; y < 10; y++) sim.grid.setMaterial(seedColumn, y, Material.SAND);
   for (let y = floorY - 5; y < floorY - 1; y++) grid.setMaterial(oilColumn, y, Material.OIL);
 }
 
+// Temporary Step 5 demo seed — a stone-walled wood structure with one
+// corner already on fire and a water puddle touching that same corner, so
+// ignition spread, burnout-to-smoke, and steam formation/condensation are
+// all visible before Step 6 adds real painting.
+{
+  const { grid } = sim;
+  const left = 24;
+  const right = 61;
+  const floorY = grid.height - 1;
+  for (let x = left; x <= right; x++) grid.setMaterial(x, floorY, Material.STONE);
+  for (let y = floorY - 30; y <= floorY; y++) {
+    grid.setMaterial(left, y, Material.STONE);
+    grid.setMaterial(right, y, Material.STONE);
+  }
+  const woodLeft = 30;
+  const woodRight = 55;
+  for (let y = floorY - 24; y < floorY; y++) {
+    for (let x = woodLeft; x <= woodRight; x++) grid.setMaterial(x, y, Material.WOOD);
+  }
+  for (let y = floorY - 1; y >= floorY - 2; y--) {
+    for (let x = 26; x <= 29; x++) grid.setMaterial(x, y, Material.WATER);
+  }
+  grid.setMaterial(woodLeft, floorY - 1, Material.FIRE); // ignite the corner touching the puddle
+}
+
 const input = new PointerInput(canvas);
 input.onDown((point) => sim.spawnParticlesAt(point.x, point.y, 8));
 

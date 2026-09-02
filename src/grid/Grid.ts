@@ -81,6 +81,44 @@ export class Grid {
     this.markActiveAround(bX, bY);
   }
 
+  /**
+   * Converts a cell to a different material in place (e.g. wood catching
+   * fire, fire burning out to empty, water turned to steam, steam
+   * condensing back to water) — same processed/active bookkeeping as
+   * moveMaterial/swapMaterial, so a cell transformed mid-tick doesn't also
+   * run its new rule this same tick.
+   */
+  transformMaterial(x: number, y: number, id: number, timer = 0): void {
+    const idx = this.index(x, y);
+    this.material[idx] = id;
+    this.timer[idx] = timer;
+    this.processedThisTick[idx] = 1;
+    this.markActiveAround(x, y);
+  }
+
+  /**
+   * Resets a cell's timer without changing its material or marking it
+   * processed (unlike transformMaterial) — used to refresh an aging clock
+   * in place, e.g. fire keeping nearby steam from condensing back to water
+   * while still in contact. Not marking it processed matters here: fire is
+   * always scanned before a cell directly above it in the same tick, so if
+   * this did lock the cell, steam sitting right on top of a fire could
+   * never take its own turn to drift away — it'd be "refreshed" every tick
+   * before it ever got to move.
+   */
+  resetTimer(x: number, y: number): void {
+    this.timer[this.index(x, y)] = 0;
+  }
+
+  /** Advances a cell's timer by one tick (a rule's own aging clock — burn/dissipation countdowns) and returns the new value. */
+  incrementTimer(x: number, y: number): number {
+    const idx = this.index(x, y);
+    const next = this.timer[idx] + 1;
+    this.timer[idx] = next;
+    this.activeNext.add(idx);
+    return next;
+  }
+
   isProcessed(idx: number): boolean {
     return this.processedThisTick[idx] === 1;
   }

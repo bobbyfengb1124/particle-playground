@@ -7,7 +7,7 @@ Build plan: one step at a time, in order. Each step is implemented, tested (`npm
 - [x] **Step 2 — Forces**: gravity, adjustable wind, drag, edge/floor bounce with damping.
 - [x] **Step 3 — Falling sand**: CA grid (empty/sand), falling rule, ordered/double-buffered tick.
 - [x] **Step 4 — Liquids & stone**: water (spreads to level), oil (floats on water), stone (immovable).
-- [ ] **Step 5 — Fire, smoke, steam**: wood (flammable), fire (ignite + burn out), smoke (drift + dissipate), steam (water ↔ fire conversion).
+- [x] **Step 5 — Fire, smoke, steam**: wood (flammable), fire (ignite + burn out), smoke (drift + dissipate), steam (water ↔ fire conversion).
 - [ ] **Step 6 — Interactivity**: material palette + eraser, brush size, drag-to-paint, clear grid, pause/resume.
 - [ ] **Step 7 — Fireworks**: click-drag-release launch, 4 ember patterns (ring, willow, crossette, strobe), low-burst ember ignition of the grid.
 - [ ] **Step 8 — Performance**: fixed-timestep loop (built in Step 1), active-cell skip optimization switched on, particle pool cap, FPS/particle-count/active-cell readout.
