@@ -65,6 +65,22 @@ export class Grid {
     this.markActiveAround(toX, toY);
   }
 
+  /** Exchanges two cells' material+timer in place (e.g. a denser liquid sinking through a lighter one). */
+  swapMaterial(aX: number, aY: number, bX: number, bY: number): void {
+    const aIdx = this.index(aX, aY);
+    const bIdx = this.index(bX, bY);
+    const aMaterial = this.material[aIdx];
+    const aTimer = this.timer[aIdx];
+    this.material[aIdx] = this.material[bIdx];
+    this.timer[aIdx] = this.timer[bIdx];
+    this.material[bIdx] = aMaterial;
+    this.timer[bIdx] = aTimer;
+    this.processedThisTick[aIdx] = 1;
+    this.processedThisTick[bIdx] = 1;
+    this.markActiveAround(aX, aY);
+    this.markActiveAround(bX, bY);
+  }
+
   isProcessed(idx: number): boolean {
     return this.processedThisTick[idx] === 1;
   }

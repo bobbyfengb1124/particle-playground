@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`liquids and stone > oil poured into standing water rises to float on top of it 1`] = `
+"#..........#
+#..........#
+#..........#
+#..........#
+#wwwwowwwww#
+#wwwwwwwwww#
+#wwwwwwwwww#
+#wwwwwwwwww#
+#wwwwwwwwww#
+#wwwwwwwwww#
+#wwwwwwwwww#
+############"
+`;
+
+exports[`liquids and stone > water poured into a stone container settles into a flat pool 1`] = `
+"#......#
+#......#
+#......#
+#......#
+#......#
+#......#
+#wwwww.#
+########"
+`;

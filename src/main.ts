@@ -22,6 +22,27 @@ const sim = new Simulation({ width: canvas.width, height: canvas.height, seed: 1
 const seedColumn = Math.floor(sim.grid.width / 2);
 for (let y = 0; y < 10; y++) sim.grid.setMaterial(seedColumn, y, Material.SAND);
 
+// Temporary Step 4 demo seed — a stone-walled basin with standing water and
+// an oil column dropped in among it, so leveling and floating are visible
+// before Step 6 adds real painting.
+{
+  const { grid } = sim;
+  const left = grid.width - 90;
+  const right = grid.width - 10;
+  const floorY = grid.height - 1;
+  for (let x = left; x <= right; x++) grid.setMaterial(x, floorY, Material.STONE);
+  for (let y = floorY - 40; y <= floorY; y++) {
+    grid.setMaterial(left, y, Material.STONE);
+    grid.setMaterial(right, y, Material.STONE);
+  }
+  for (let y = floorY - 15; y < floorY; y++) {
+    for (let x = left + 1; x < right; x++) grid.setMaterial(x, y, Material.WATER);
+  }
+  // Submerged under several rows of water, so it has to rise to float.
+  const oilColumn = left + 20;
+  for (let y = floorY - 5; y < floorY - 1; y++) grid.setMaterial(oilColumn, y, Material.OIL);
+}
+
 const input = new PointerInput(canvas);
 input.onDown((point) => sim.spawnParticlesAt(point.x, point.y, 8));
 
