@@ -3,6 +3,7 @@ import { createRng, deriveSeed, range, type Rng } from "../core/Rng";
 import { Grid } from "../grid/Grid";
 import { GridRenderer } from "../grid/GridRenderer";
 import { GridStepper } from "../grid/GridStepper";
+import type { MaterialIdValue } from "../grid/materials";
 import type { Bounds } from "../particles/collisions";
 import { renderParticles } from "../particles/ParticleRenderer";
 import { ParticleSystem } from "../particles/ParticleSystem";
@@ -79,6 +80,55 @@ export class Simulation {
 
   setWind(wind: number): void {
     this.appState.wind = wind;
+  }
+
+  get selectedMaterial(): MaterialIdValue {
+    return this.appState.selectedMaterial;
+  }
+
+  setSelectedMaterial(material: MaterialIdValue): void {
+    this.appState.selectedMaterial = material;
+  }
+
+  get brushSize(): number {
+    return this.appState.brushSize;
+  }
+
+  setBrushSize(size: number): void {
+    this.appState.brushSize = Math.max(0, Math.floor(size));
+  }
+
+  /** Paints (or erases, if the selected material is EMPTY) a square brush centered on a canvas pixel position. */
+  paintAt(x: number, y: number): void {
+    const gx = Math.floor(x / this.cellSize);
+    const gy = Math.floor(y / this.cellSize);
+    const radius = this.appState.brushSize;
+    const material = this.appState.selectedMaterial;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const cx = gx + dx;
+        const cy = gy + dy;
+        if (this.grid.inBounds(cx, cy)) this.grid.setMaterial(cx, cy, material);
+      }
+    }
+  }
+
+  /**
+   * Paints along the segment between two canvas pixel positions, at sub-cell
+   * steps — otherwise a fast drag would leave gaps between one pointermove
+   * event's brush stamp and the next.
+   */
+  paintStroke(x0: number, y0: number, x1: number, y1: number): void {
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(1, Math.ceil(dist / (this.cellSize / 2)));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      this.paintAt(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+    }
+  }
+
+  clearGrid(): void {
+    this.grid.clear();
   }
 
   tick(dt: number): void {
