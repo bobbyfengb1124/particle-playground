@@ -39,6 +39,16 @@ function createSlider(container: HTMLElement, spec: SliderSpec): void {
   container.append(label, slider);
 }
 
+/** Creates a button wired to `onClick`, appended to `container`, and returns it so callers can add per-button extras (a swatch color, a tracking Map entry). */
+function createButton(container: HTMLElement, label: string, onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  container.appendChild(btn);
+  return btn;
+}
+
 function createPaletteControl(container: HTMLElement, sim: Simulation): void {
   const palette = document.createElement("div");
   palette.id = "palette";
@@ -51,48 +61,32 @@ function createPaletteControl(container: HTMLElement, sim: Simulation): void {
 
   for (const material of PALETTE_MATERIALS) {
     const info = MATERIALS[material];
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = info.name;
+    const btn = createButton(palette, info.name, () => select(material));
     btn.style.setProperty("--swatch", `rgb(${info.color.join(",")})`);
-    btn.addEventListener("click", () => select(material));
     buttons.set(material, btn);
-    palette.appendChild(btn);
   }
 
-  const eraserBtn = document.createElement("button");
-  eraserBtn.type = "button";
-  eraserBtn.textContent = "Eraser";
+  const eraserBtn = createButton(palette, "Eraser", () => select(Material.EMPTY));
   eraserBtn.style.setProperty("--swatch", `rgb(${MATERIALS[Material.EMPTY].color.join(",")})`);
-  eraserBtn.addEventListener("click", () => select(Material.EMPTY));
   buttons.set(Material.EMPTY, eraserBtn);
-  palette.appendChild(eraserBtn);
 
   select(sim.selectedMaterial);
   container.appendChild(palette);
 }
 
 function createClearButton(container: HTMLElement, sim: Simulation): void {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.textContent = "Clear";
-  btn.addEventListener("click", () => sim.clearGrid());
-  container.appendChild(btn);
+  createButton(container, "Clear", () => sim.clearGrid());
 }
 
 function createPauseButton(container: HTMLElement, sim: Simulation): void {
-  const btn = document.createElement("button");
-  btn.type = "button";
   const refreshLabel = (): void => {
     btn.textContent = sim.isPaused ? "Resume" : "Pause";
   };
-  refreshLabel();
-  btn.addEventListener("click", () => {
+  const btn = createButton(container, sim.isPaused ? "Resume" : "Pause", () => {
     if (sim.isPaused) sim.resume();
     else sim.pause();
     refreshLabel();
   });
-  container.appendChild(btn);
 }
 
 /**

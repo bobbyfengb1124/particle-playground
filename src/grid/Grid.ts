@@ -141,11 +141,16 @@ export class Grid {
   }
 
   markActiveAround(x: number, y: number): void {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (this.inBounds(nx, ny)) this.activeNext.add(this.index(nx, ny));
+    this.forEachInSquare(x, y, 1, (nx, ny) => this.activeNext.add(this.index(nx, ny)));
+  }
+
+  /** Calls `fn` for every in-bounds cell in the (2*radius+1)-side square centered on (cx, cy), inclusive of the center. */
+  forEachInSquare(cx: number, cy: number, radius: number, fn: (x: number, y: number) => void): void {
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        if (this.inBounds(x, y)) fn(x, y);
       }
     }
   }
