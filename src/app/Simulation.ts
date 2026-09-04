@@ -1,6 +1,7 @@
 import { AppState } from "./AppState";
 import { createRng, deriveSeed, range, type Rng } from "../core/Rng";
 import { Grid } from "../grid/Grid";
+import { GridPainter } from "../grid/GridPainter";
 import { GridRenderer } from "../grid/GridRenderer";
 import { GridStepper } from "../grid/GridStepper";
 import type { MaterialIdValue } from "../grid/materials";
@@ -33,6 +34,7 @@ export class Simulation {
   private readonly gridRng: Rng;
   private readonly gridStepper = new GridStepper();
   private readonly gridRenderer: GridRenderer;
+  private readonly gridPainter: GridPainter;
   private readonly appState = new AppState();
   private readonly bounds: Bounds;
   private readonly gravity: number;
@@ -56,6 +58,7 @@ export class Simulation {
     const gridHeight = Math.max(1, Math.floor(this.height / this.cellSize));
     this.grid = new Grid(gridWidth, gridHeight);
     this.gridRenderer = new GridRenderer(this.grid);
+    this.gridPainter = new GridPainter(this.grid, this.cellSize);
   }
 
   spawnParticlesAt(x: number, y: number, count = 1): void {
@@ -98,33 +101,14 @@ export class Simulation {
     this.appState.brushSize = Math.max(0, Math.floor(size));
   }
 
-  /** Paints (or erases, if the selected material is EMPTY) a square brush centered on a canvas pixel position. */
+  /** Paints (or erases, if the selected material is EMPTY) a brush centered on a canvas pixel position. */
   paintAt(x: number, y: number): void {
-    const gx = Math.floor(x / this.cellSize);
-    const gy = Math.floor(y / this.cellSize);
-    const radius = this.appState.brushSize;
-    const material = this.appState.selectedMaterial;
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const cx = gx + dx;
-        const cy = gy + dy;
-        if (this.grid.inBounds(cx, cy)) this.grid.setMaterial(cx, cy, material);
-      }
-    }
+    this.gridPainter.paintAt(x, y, this.appState.selectedMaterial, this.appState.brushSize);
   }
 
-  /**
-   * Paints along the segment between two canvas pixel positions, at sub-cell
-   * steps — otherwise a fast drag would leave gaps between one pointermove
-   * event's brush stamp and the next.
-   */
+  /** Paints along the segment between two canvas pixel positions, for continuous drag strokes. */
   paintStroke(x0: number, y0: number, x1: number, y1: number): void {
-    const dist = Math.hypot(x1 - x0, y1 - y0);
-    const steps = Math.max(1, Math.ceil(dist / (this.cellSize / 2)));
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      this.paintAt(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
-    }
+    this.gridPainter.paintStroke(x0, y0, x1, y1, this.appState.selectedMaterial, this.appState.brushSize);
   }
 
   clearGrid(): void {

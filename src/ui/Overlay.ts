@@ -1,5 +1,36 @@
-import type { Simulation } from "../app/Simulation";
 import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
+
+// Each interface is exactly the slice of Simulation one control group
+// touches — createOverlay depends on their intersection, not the concrete
+// Simulation class, so e.g. createPauseButton can't reach into painting
+// settings it has no business seeing, and a future control only needs a
+// new small interface, never a change to an existing one.
+export interface WindControl {
+  readonly wind: number;
+  setWind(wind: number): void;
+}
+
+export interface MaterialControl {
+  readonly selectedMaterial: MaterialIdValue;
+  setSelectedMaterial(material: MaterialIdValue): void;
+}
+
+export interface BrushControl {
+  readonly brushSize: number;
+  setBrushSize(size: number): void;
+}
+
+export interface ClearControl {
+  clearGrid(): void;
+}
+
+export interface PauseControl {
+  readonly isPaused: boolean;
+  pause(): void;
+  resume(): void;
+}
+
+export type OverlaySimulation = WindControl & MaterialControl & BrushControl & ClearControl & PauseControl;
 
 // Smoke/steam are byproducts of fire/water, not something a user paints
 // directly — the palette only offers materials meant to be placed.
@@ -12,36 +43,31 @@ const PALETTE_MATERIALS: readonly MaterialIdValue[] = [
   Material.FIRE,
 ];
 
-/**
- * Wires real HTML controls into `container`, calling only Simulation's public
- * methods — never reaching into ParticleSystem/Grid directly. Keeps the UI a
- * thin DOM-event translator so tests can drive the same public API headlessly.
- */
-export function createOverlay(container: HTMLElement, sim: Simulation): void {
-  const windLabel = document.createElement("label");
-  windLabel.htmlFor = "wind-slider";
-  windLabel.textContent = "Wind";
+function createWindControl(container: HTMLElement, sim: WindControl): void {
+  const label = document.createElement("label");
+  label.htmlFor = "wind-slider";
+  label.textContent = "Wind";
 
-  const windSlider = document.createElement("input");
-  windSlider.id = "wind-slider";
-  windSlider.type = "range";
-  windSlider.min = "-400";
-  windSlider.max = "400";
-  windSlider.step = "10";
-  windSlider.value = String(sim.wind);
-  windSlider.addEventListener("input", () => {
-    sim.setWind(Number(windSlider.value));
-  });
+  const slider = document.createElement("input");
+  slider.id = "wind-slider";
+  slider.type = "range";
+  slider.min = "-400";
+  slider.max = "400";
+  slider.step = "10";
+  slider.value = String(sim.wind);
+  slider.addEventListener("input", () => sim.setWind(Number(slider.value)));
 
-  container.append(windLabel, windSlider);
+  container.append(label, slider);
+}
 
+function createPaletteControl(container: HTMLElement, sim: MaterialControl): void {
   const palette = document.createElement("div");
   palette.id = "palette";
 
-  const paletteButtons = new Map<MaterialIdValue, HTMLButtonElement>();
-  const selectMaterial = (material: MaterialIdValue): void => {
+  const buttons = new Map<MaterialIdValue, HTMLButtonElement>();
+  const select = (material: MaterialIdValue): void => {
     sim.setSelectedMaterial(material);
-    for (const [id, btn] of paletteButtons) btn.classList.toggle("active", id === material);
+    for (const [id, btn] of buttons) btn.classList.toggle("active", id === material);
   };
 
   for (const material of PALETTE_MATERIALS) {
@@ -50,8 +76,8 @@ export function createOverlay(container: HTMLElement, sim: Simulation): void {
     btn.type = "button";
     btn.textContent = info.name;
     btn.style.setProperty("--swatch", `rgb(${info.color.join(",")})`);
-    btn.addEventListener("click", () => selectMaterial(material));
-    paletteButtons.set(material, btn);
+    btn.addEventListener("click", () => select(material));
+    buttons.set(material, btn);
     palette.appendChild(btn);
   }
 
@@ -59,46 +85,63 @@ export function createOverlay(container: HTMLElement, sim: Simulation): void {
   eraserBtn.type = "button";
   eraserBtn.textContent = "Eraser";
   eraserBtn.style.setProperty("--swatch", `rgb(${MATERIALS[Material.EMPTY].color.join(",")})`);
-  eraserBtn.addEventListener("click", () => selectMaterial(Material.EMPTY));
-  paletteButtons.set(Material.EMPTY, eraserBtn);
+  eraserBtn.addEventListener("click", () => select(Material.EMPTY));
+  buttons.set(Material.EMPTY, eraserBtn);
   palette.appendChild(eraserBtn);
 
-  selectMaterial(sim.selectedMaterial);
+  select(sim.selectedMaterial);
   container.appendChild(palette);
+}
 
-  const brushLabel = document.createElement("label");
-  brushLabel.htmlFor = "brush-slider";
-  brushLabel.textContent = "Brush";
+function createBrushControl(container: HTMLElement, sim: BrushControl): void {
+  const label = document.createElement("label");
+  label.htmlFor = "brush-slider";
+  label.textContent = "Brush";
 
-  const brushSlider = document.createElement("input");
-  brushSlider.id = "brush-slider";
-  brushSlider.type = "range";
-  brushSlider.min = "0";
-  brushSlider.max = "8";
-  brushSlider.step = "1";
-  brushSlider.value = String(sim.brushSize);
-  brushSlider.addEventListener("input", () => {
-    sim.setBrushSize(Number(brushSlider.value));
-  });
+  const slider = document.createElement("input");
+  slider.id = "brush-slider";
+  slider.type = "range";
+  slider.min = "0";
+  slider.max = "8";
+  slider.step = "1";
+  slider.value = String(sim.brushSize);
+  slider.addEventListener("input", () => sim.setBrushSize(Number(slider.value)));
 
-  container.append(brushLabel, brushSlider);
+  container.append(label, slider);
+}
 
-  const clearBtn = document.createElement("button");
-  clearBtn.type = "button";
-  clearBtn.textContent = "Clear";
-  clearBtn.addEventListener("click", () => sim.clearGrid());
-  container.appendChild(clearBtn);
+function createClearButton(container: HTMLElement, sim: ClearControl): void {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = "Clear";
+  btn.addEventListener("click", () => sim.clearGrid());
+  container.appendChild(btn);
+}
 
-  const pauseBtn = document.createElement("button");
-  pauseBtn.type = "button";
-  const refreshPauseLabel = (): void => {
-    pauseBtn.textContent = sim.isPaused ? "Resume" : "Pause";
+function createPauseButton(container: HTMLElement, sim: PauseControl): void {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  const refreshLabel = (): void => {
+    btn.textContent = sim.isPaused ? "Resume" : "Pause";
   };
-  refreshPauseLabel();
-  pauseBtn.addEventListener("click", () => {
+  refreshLabel();
+  btn.addEventListener("click", () => {
     if (sim.isPaused) sim.resume();
     else sim.pause();
-    refreshPauseLabel();
+    refreshLabel();
   });
-  container.appendChild(pauseBtn);
+  container.appendChild(btn);
+}
+
+/**
+ * Wires real HTML controls into `container`, calling only Simulation's public
+ * methods — never reaching into ParticleSystem/Grid directly. Keeps the UI a
+ * thin DOM-event translator so tests can drive the same public API headlessly.
+ */
+export function createOverlay(container: HTMLElement, sim: OverlaySimulation): void {
+  createWindControl(container, sim);
+  createPaletteControl(container, sim);
+  createBrushControl(container, sim);
+  createClearButton(container, sim);
+  createPauseButton(container, sim);
 }
