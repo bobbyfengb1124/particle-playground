@@ -18,20 +18,31 @@ const sim = new Simulation({ width: canvas.width, height: canvas.height, seed: 1
 
 // Drag-to-paint: pointerdown starts a stroke, pointermove extends it from the
 // last point (so fast drags don't leave gaps between brush stamps), pointerup
-// ends it.
+// ends it. In "launch" mode the same gesture instead means click-drag-release:
+// pointerdown just remembers the launch point, and the actual rocket only
+// fires on pointerup, once the full drag distance (i.e. power) is known.
 const input = new PointerInput(canvas);
 let lastPaintPoint: CanvasPoint | null = null;
+let launchStartPoint: CanvasPoint | null = null;
 
 input.onDown((point) => {
+  if (sim.mode === "launch") {
+    launchStartPoint = point;
+    return;
+  }
   lastPaintPoint = point;
   sim.paintAt(point.x, point.y);
 });
 input.onMove((point) => {
-  if (!lastPaintPoint) return;
+  if (sim.mode === "launch" || !lastPaintPoint) return;
   sim.paintStroke(lastPaintPoint.x, lastPaintPoint.y, point.x, point.y);
   lastPaintPoint = point;
 });
-input.onUp(() => {
+input.onUp((point) => {
+  if (launchStartPoint) {
+    sim.launchFromDrag(launchStartPoint.x, launchStartPoint.y, point.x, point.y);
+    launchStartPoint = null;
+  }
   lastPaintPoint = null;
 });
 

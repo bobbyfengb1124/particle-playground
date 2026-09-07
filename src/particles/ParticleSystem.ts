@@ -22,8 +22,11 @@ export interface ParticleInit {
   lifespan?: number;
   dragCoef?: number;
   restitution?: number;
+  gravityScale?: number;
   kind?: number;
   behavior?: number;
+  behaviorTimer?: number;
+  behaviorFlag?: number;
 }
 
 export class ParticleSystem {
@@ -57,9 +60,17 @@ export class ParticleSystem {
     if (init.lifespan !== undefined) p.lifespan = init.lifespan;
     if (init.dragCoef !== undefined) p.dragCoef = init.dragCoef;
     if (init.restitution !== undefined) p.restitution = init.restitution;
+    if (init.gravityScale !== undefined) p.gravityScale = init.gravityScale;
     if (init.kind !== undefined) p.kind = init.kind;
     if (init.behavior !== undefined) p.behavior = init.behavior;
+    if (init.behaviorTimer !== undefined) p.behaviorTimer = init.behaviorTimer;
+    if (init.behaviorFlag !== undefined) p.behaviorFlag = init.behaviorFlag;
     return p;
+  }
+
+  /** Removes a single particle immediately (e.g. a rocket consumed by its own burst, or an ember consumed by the grid it landed on). */
+  release(p: Particle): void {
+    this.pool.release(p);
   }
 
   update(dt: number, env: ParticleEnvironment): void {

@@ -33,12 +33,14 @@ body {
   max-width: 960px;
 }
 
-#palette {
+#palette,
+#firework-patterns {
   display: flex;
   gap: 4px;
 }
 
 #palette button,
+#firework-patterns button,
 #overlay > button {
   background: #1a1d22;
   color: #e8e8e8;
@@ -67,6 +69,7 @@ body {
 }
 
 #palette button.active,
+#firework-patterns button.active,
 #overlay > button.active {
   border-color: #e8e8e8;
   background: #2a2e35;

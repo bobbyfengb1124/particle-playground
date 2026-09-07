@@ -5,8 +5,10 @@
 // `npm run test:browser` while `npm run dev` is up (or let it fail fast if
 // the server isn't reachable).
 //
-// Extend this as new steps land — right now it covers Step 6 (palette,
-// brush size, drag-to-paint, eraser, pause/resume, clear).
+// Extend this as new steps land — it covers Step 6 (palette, brush size,
+// drag-to-paint, eraser, pause/resume, clear) and Step 7 (click-drag-release
+// launch, all four ember patterns, low-burst ignition of flammable vs.
+// non-flammable material).
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -111,6 +113,65 @@ async function shot(page, name) {
   await page.click("button:has-text('Resume')");
   await page.waitForTimeout(1500);
   await shot(page, "resumed-sand-fell");
+
+  await page.click("button:has-text('Clear')");
+
+  // Step 7 — fireworks. Switch to Launch mode; a click-drag-release from
+  // near the bottom sets power by drag distance (direction doesn't matter).
+  await page.click("#palette button:has-text('Launch')");
+
+  async function launch(dragUpPx) {
+    const x = box.x + box.width / 2;
+    const yStart = box.y + box.height - 20;
+    await page.mouse.move(x, yStart);
+    await page.mouse.down();
+    await page.mouse.move(x, yStart - dragUpPx, { steps: 10 });
+    await page.mouse.up();
+  }
+
+  for (const pattern of ["Ring", "Willow", "Crossette", "Strobe"]) {
+    await page.click(`#firework-patterns button:has-text('${pattern}')`);
+    await launch(box.height * 0.5); // max-power drag -> bursts near the top
+    await page.waitForTimeout(900); // ~time-to-apex for a max-power shot
+    await shot(page, `firework-${pattern.toLowerCase()}-burst`);
+    await page.waitForTimeout(900); // let embers fall/droop/split further
+    await shot(page, `firework-${pattern.toLowerCase()}-falling`);
+    if (pattern === "Strobe") {
+      // Two shots close together to catch the whole burst mid-toggle (all
+      // strobe embers from one shell share the same flicker phase).
+      await page.waitForTimeout(45);
+      await shot(page, "firework-strobe-flicker-a");
+      await page.waitForTimeout(45);
+      await shot(page, "firework-strobe-flicker-b");
+    }
+    await page.waitForTimeout(1500); // let it fully clear before the next launch
+  }
+
+  // Low-height burst directly over painted wood should ignite it.
+  await page.click("button:has-text('Clear')");
+  await page.click("#palette button:has-text('wood')");
+  const groundY = box.y + box.height - 20;
+  await page.mouse.move(box.x + box.width / 2 - 100, groundY);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 100, groundY, { steps: 10 });
+  await page.mouse.up();
+  await page.click("#palette button:has-text('Launch')");
+  await page.click("#firework-patterns button:has-text('Ring')");
+  await launch(0); // no drag -> lowest possible burst, right above the wood
+  await page.waitForTimeout(2000);
+  await shot(page, "firework-low-burst-ignites-wood");
+
+  // Low-height burst over stone should ignite nothing.
+  await page.click("button:has-text('Clear')");
+  await page.click("#palette button:has-text('stone')");
+  await page.mouse.move(box.x + box.width / 2 - 100, groundY);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 100, groundY, { steps: 10 });
+  await page.mouse.up();
+  await page.click("#palette button:has-text('Launch')");
+  await launch(0);
+  await page.waitForTimeout(2000);
+  await shot(page, "firework-low-burst-over-stone-no-ignition");
 
   // Clear grid.
   await page.click("button:has-text('Clear')");

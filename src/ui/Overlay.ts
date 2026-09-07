@@ -1,5 +1,13 @@
 import type { Simulation } from "../app/Simulation";
+import { FireworkPattern, type FireworkPatternValue } from "../core/types";
 import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
+
+const FIREWORK_PATTERNS: ReadonlyArray<{ id: FireworkPatternValue; label: string }> = [
+  { id: FireworkPattern.RING, label: "Ring" },
+  { id: FireworkPattern.WILLOW, label: "Willow" },
+  { id: FireworkPattern.CROSSETTE, label: "Crossette" },
+  { id: FireworkPattern.STROBE, label: "Strobe" },
+];
 
 // Smoke/steam are byproducts of fire/water, not something a user paints
 // directly — the palette only offers materials meant to be placed.
@@ -49,29 +57,65 @@ function createButton(container: HTMLElement, label: string, onClick: () => void
   return btn;
 }
 
+/** Material swatches, an eraser, and a Launch tool — exactly one is ever active, deciding what a canvas click/drag does. */
 function createPaletteControl(container: HTMLElement, sim: Simulation): void {
   const palette = document.createElement("div");
   palette.id = "palette";
 
   const buttons = new Map<MaterialIdValue, HTMLButtonElement>();
-  const select = (material: MaterialIdValue): void => {
+  let launchBtn!: HTMLButtonElement;
+  const activate = (btn: HTMLButtonElement): void => {
+    for (const b of buttons.values()) b.classList.toggle("active", b === btn);
+    launchBtn.classList.toggle("active", btn === launchBtn);
+  };
+
+  const selectMaterial = (material: MaterialIdValue): void => {
+    sim.setMode("paint");
     sim.setSelectedMaterial(material);
-    for (const [id, btn] of buttons) btn.classList.toggle("active", id === material);
+    activate(buttons.get(material)!);
   };
 
   for (const material of PALETTE_MATERIALS) {
     const info = MATERIALS[material];
-    const btn = createButton(palette, info.name, () => select(material));
+    const btn = createButton(palette, info.name, () => selectMaterial(material));
     btn.style.setProperty("--swatch", `rgb(${info.color.join(",")})`);
     buttons.set(material, btn);
   }
 
-  const eraserBtn = createButton(palette, "Eraser", () => select(Material.EMPTY));
+  const eraserBtn = createButton(palette, "Eraser", () => selectMaterial(Material.EMPTY));
   eraserBtn.style.setProperty("--swatch", `rgb(${MATERIALS[Material.EMPTY].color.join(",")})`);
   buttons.set(Material.EMPTY, eraserBtn);
 
-  select(sim.selectedMaterial);
+  launchBtn = createButton(palette, "Launch", () => {
+    sim.setMode("launch");
+    activate(launchBtn);
+  });
+  launchBtn.style.setProperty("--swatch", "rgb(255, 200, 60)");
+
+  if (sim.mode === "launch") activate(launchBtn);
+  else activate(buttons.get(sim.selectedMaterial)!);
+
   container.appendChild(palette);
+}
+
+/** Ring/Willow/Crossette/Strobe — which pattern the next rocket bursts into, following the same button-group convention as the material palette. */
+function createFireworkPatternControl(container: HTMLElement, sim: Simulation): void {
+  const group = document.createElement("div");
+  group.id = "firework-patterns";
+
+  const buttons = new Map<FireworkPatternValue, HTMLButtonElement>();
+  const select = (pattern: FireworkPatternValue): void => {
+    sim.setFireworkPattern(pattern);
+    for (const [id, btn] of buttons) btn.classList.toggle("active", id === pattern);
+  };
+
+  for (const { id, label } of FIREWORK_PATTERNS) {
+    const btn = createButton(group, label, () => select(id));
+    buttons.set(id, btn);
+  }
+
+  select(sim.fireworkPattern);
+  container.appendChild(group);
 }
 
 function createClearButton(container: HTMLElement, sim: Simulation): void {
@@ -105,6 +149,7 @@ export function createOverlay(container: HTMLElement, sim: Simulation): void {
     onInput: (v) => sim.setWind(v),
   });
   createPaletteControl(container, sim);
+  createFireworkPatternControl(container, sim);
   createSlider(container, {
     id: "brush-slider",
     label: "Brush",

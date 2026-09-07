@@ -1,8 +1,8 @@
 import type { Particle } from "./Particle";
 
-/** Accumulates a constant downward acceleration onto the particle. */
+/** Accumulates a constant downward acceleration onto the particle, scaled by its own gravityScale (1 for everything but drooping willow embers). */
 export function applyGravity(p: Particle, gravity: number): void {
-  p.ay += gravity;
+  p.ay += gravity * p.gravityScale;
 }
 
 /** Accumulates a constant horizontal acceleration onto the particle. */

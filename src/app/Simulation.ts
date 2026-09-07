@@ -1,16 +1,26 @@
-import { AppState } from "./AppState";
+import { AppState, type InteractionMode } from "./AppState";
 import { createRng, deriveSeed, range, type Rng } from "../core/Rng";
+import { ParticleKind, type FireworkPatternValue } from "../core/types";
 import { Grid } from "../grid/Grid";
 import { GridRenderer } from "../grid/GridRenderer";
 import { GridStepper } from "../grid/GridStepper";
-import type { MaterialIdValue } from "../grid/materials";
+import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
 import type { Bounds } from "../particles/collisions";
+import { launchRocket, updateFireworkBehaviors } from "../particles/fireworks";
+import type { Particle } from "../particles/Particle";
 import { renderParticles } from "../particles/ParticleRenderer";
 import { ParticleSystem } from "../particles/ParticleSystem";
 
 const DEFAULT_GRAVITY = 1400; // px/s^2 — tuned for a snappy arcade feel at this canvas scale
 const DEFAULT_DRAG_COEF = 0.8; // 1/s — applied to every click-spawned particle
 const DEFAULT_CELL_SIZE = 4; // px per grid cell
+
+// A rocket always launches straight up; only how far the user dragged before
+// releasing matters, mapped onto this fraction-of-canvas-height range so it
+// scales with any Simulation size rather than a fixed pixel count.
+const MIN_LAUNCH_HEIGHT_FRACTION = 0.15;
+const MAX_LAUNCH_HEIGHT_FRACTION = 0.9;
+const FULL_POWER_DRAG_FRACTION = 0.5; // dragging this fraction of the canvas height reaches max power
 
 export interface SimulationOptions {
   width: number;
@@ -124,6 +134,36 @@ export class Simulation {
     this.grid.clear();
   }
 
+  get mode(): InteractionMode {
+    return this.appState.mode;
+  }
+
+  setMode(mode: InteractionMode): void {
+    this.appState.mode = mode;
+  }
+
+  get fireworkPattern(): FireworkPatternValue {
+    return this.appState.fireworkPattern;
+  }
+
+  setFireworkPattern(pattern: FireworkPatternValue): void {
+    this.appState.fireworkPattern = pattern;
+  }
+
+  /**
+   * Launches a rocket straight up from (x0, y0); the drag distance to
+   * (x1, y1) sets how high it flies before bursting — direction is ignored,
+   * only distance matters, clamped at FULL_POWER_DRAG_FRACTION of the canvas
+   * height so a click with no drag still fires a low burst.
+   */
+  launchFromDrag(x0: number, y0: number, x1: number, y1: number): void {
+    const dragDistance = Math.hypot(x1 - x0, y1 - y0);
+    const power = Math.min(1, dragDistance / (this.height * FULL_POWER_DRAG_FRACTION));
+    const targetHeight = this.height * (MIN_LAUNCH_HEIGHT_FRACTION + power * (MAX_LAUNCH_HEIGHT_FRACTION - MIN_LAUNCH_HEIGHT_FRACTION));
+    const speed = Math.sqrt(2 * this.gravity * targetHeight);
+    launchRocket(this.particles, x0, y0, speed, this.appState.fireworkPattern);
+  }
+
   tick(dt: number): void {
     if (this.paused) return;
     this.particles.update(dt, {
@@ -131,10 +171,28 @@ export class Simulation {
       wind: this.appState.wind,
       bounds: this.bounds,
     });
+    updateFireworkBehaviors(this.particles, dt, this.particleRng);
+    this.igniteEmbersOnLanding();
     this.gridTickCounter++;
     if (this.gridTickCounter % this.gridTicksPerSimTick === 0) {
       this.gridStepper.step(this.grid, this.gridRng);
     }
+  }
+
+  /** A falling ember that reaches a non-empty grid cell is consumed — igniting the cell if it's flammable, just settling into it otherwise. */
+  private igniteEmbersOnLanding(): void {
+    const landed: Particle[] = [];
+    this.particles.forEachActive((p) => {
+      if (p.kind !== ParticleKind.EMBER) return;
+      const gx = Math.floor(p.x / this.cellSize);
+      const gy = Math.floor(p.y / this.cellSize);
+      if (!this.grid.inBounds(gx, gy)) return;
+      const cellId = this.grid.get(gx, gy);
+      if (cellId === Material.EMPTY) return;
+      if (MATERIALS[cellId].flammable) this.grid.transformMaterial(gx, gy, Material.FIRE, 0);
+      landed.push(p);
+    });
+    for (const p of landed) this.particles.release(p);
   }
 
   render(ctx: CanvasRenderingContext2D): void {
