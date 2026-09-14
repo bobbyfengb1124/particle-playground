@@ -195,6 +195,14 @@ export class Simulation {
     for (const p of landed) this.particles.release(p);
   }
 
+  /** Read-only snapshot for the on-screen readout — FPS is deliberately not here, since tick(dt) never reads the wall clock by design. */
+  getStats(): { particleCount: number; activeCellCount: number } {
+    return {
+      particleCount: this.particles.activeCount,
+      activeCellCount: this.grid.activeCount,
+    };
+  }
+
   render(ctx: CanvasRenderingContext2D): void {
     ctx.clearRect(0, 0, this.width, this.height);
     this.gridRenderer.render(ctx, this.width, this.height);

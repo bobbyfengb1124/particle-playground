@@ -7,10 +7,11 @@ import { RULES } from "./rules";
  * One CA tick: a "sparse-checked full scan" — bottom-up (so a cell that falls
  * into an already-visited row is never reconsidered this tick), alternating
  * left-right/right-left per tick to remove directional bias. `enableActiveSkip`
- * stays off until Step 8; until then this is a full scan every tick.
+ * (on since Step 8) skips cells the active-tracking bookkeeping has marked
+ * settled, instead of visiting every non-empty cell every tick.
  */
 export class GridStepper {
-  enableActiveSkip = false;
+  enableActiveSkip = true;
   private tickCount = 0;
 
   step(grid: Grid, rng: Rng): void {

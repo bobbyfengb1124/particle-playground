@@ -6,9 +6,11 @@
 // the server isn't reachable).
 //
 // Extend this as new steps land — it covers Step 6 (palette, brush size,
-// drag-to-paint, eraser, pause/resume, clear) and Step 7 (click-drag-release
+// drag-to-paint, eraser, pause/resume, clear), Step 7 (click-drag-release
 // launch, all four ember patterns, low-burst ignition of flammable vs.
-// non-flammable material).
+// non-flammable material), and Step 8 (the FPS/particle/active-cell readout
+// appears and its numbers move — not a substitute for the user's own manual
+// frame-rate-feel/flag-toggle checks, which need a human).
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -40,6 +42,20 @@ async function shot(page, name) {
   await page.waitForSelector("#scene");
   await page.waitForSelector("#palette button");
   await shot(page, "initial");
+
+  // Step 8 — readout: appears top-right, formatted as expected, particle
+  // count reacts to the sim (checked again mid-firework below).
+  const readoutPattern = /^FPS: \d+ \| Particles: \d+ \| Active cells: \d+$/;
+  await page.waitForFunction(
+    (pattern) => {
+      const el = document.querySelector("#readout");
+      return el && new RegExp(pattern).test(el.textContent ?? "");
+    },
+    readoutPattern.source,
+    { timeout: 2000 },
+  );
+  console.log("readout text:", await page.locator("#readout").textContent());
+  await shot(page, "readout-visible");
 
   const canvas = page.locator("#scene");
   const box = await canvas.boundingBox();
@@ -134,6 +150,11 @@ async function shot(page, name) {
     await launch(box.height * 0.5); // max-power drag -> bursts near the top
     await page.waitForTimeout(900); // ~time-to-apex for a max-power shot
     await shot(page, `firework-${pattern.toLowerCase()}-burst`);
+    if (pattern === "Ring") {
+      const readoutText = await page.locator("#readout").textContent();
+      const particles = Number(readoutText?.match(/Particles: (\d+)/)?.[1] ?? 0);
+      console.log("readout during ring burst:", readoutText, "-> particles > 0:", particles > 0);
+    }
     await page.waitForTimeout(900); // let embers fall/droop/split further
     await shot(page, `firework-${pattern.toLowerCase()}-falling`);
     if (pattern === "Strobe") {

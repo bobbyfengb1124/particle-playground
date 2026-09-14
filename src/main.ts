@@ -4,6 +4,7 @@ import { createFixedTimestepLoop } from "./core/Clock";
 import type { CanvasPoint } from "./input/PointerInput";
 import { PointerInput } from "./input/PointerInput";
 import { createOverlay } from "./ui/Overlay";
+import { createReadout } from "./ui/Readout";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene");
 if (!canvas) throw new Error("missing #scene canvas");
@@ -50,18 +51,16 @@ const overlay = document.querySelector<HTMLDivElement>("#overlay");
 if (!overlay) throw new Error("missing #overlay container");
 createOverlay(overlay, sim);
 
-// Temporary readout satisfying Step 1's own testing criteria ("watch a particle
-// counter"); Step 8 formalizes this into a full FPS/particle/active-cell readout.
-const counter = document.createElement("span");
-counter.id = "particle-count";
-overlay.appendChild(counter);
+const readoutContainer = document.querySelector<HTMLDivElement>("#readout");
+if (!readoutContainer) throw new Error("missing #readout container");
+const readout = createReadout(readoutContainer, sim);
 
 const clock = createFixedTimestepLoop({
   simHz: 60,
   update: (dt) => sim.tick(dt),
   render: () => {
     sim.render(ctx);
-    counter.textContent = `Particles: ${sim.particles.activeCount}`;
+    readout.tick();
   },
 });
 
