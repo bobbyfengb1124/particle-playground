@@ -15,6 +15,7 @@ const PALETTE_MATERIALS: readonly MaterialIdValue[] = [
   Material.SAND,
   Material.WATER,
   Material.OIL,
+  Material.ACID,
   Material.STONE,
   Material.WOOD,
   Material.FIRE,

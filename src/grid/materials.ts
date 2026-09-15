@@ -8,6 +8,7 @@ export const Material = {
   FIRE: 6,
   SMOKE: 7,
   STEAM: 8,
+  ACID: 9,
 } as const;
 export type MaterialIdValue = (typeof Material)[keyof typeof Material];
 
@@ -40,4 +41,5 @@ export const MATERIALS: readonly MaterialInfo[] = [
   { name: "fire", symbol: "f", color: [226, 88, 34] },
   { name: "smoke", symbol: "m", color: [100, 100, 100] },
   { name: "steam", symbol: "t", color: [214, 224, 232] },
+  { name: "acid", symbol: "a", color: [150, 210, 40] },
 ];

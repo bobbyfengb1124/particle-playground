@@ -1,4 +1,5 @@
 import { Material } from "../materials";
+import { stepAcid } from "./acid";
 import { stepFire } from "./fire";
 import { stepOil } from "./oil";
 import { stepSand } from "./sand";
@@ -14,6 +15,7 @@ RULES[Material.OIL] = stepOil;
 RULES[Material.FIRE] = stepFire;
 RULES[Material.SMOKE] = stepSmoke;
 RULES[Material.STEAM] = stepSteam;
+RULES[Material.ACID] = stepAcid;
 // Material.STONE and Material.WOOD have no entry — GridStepper skips cells
 // with no rule, which is exactly "immovable". Wood's flammability is just
 // metadata (MaterialInfo.flammable) that fire's own rule checks on its

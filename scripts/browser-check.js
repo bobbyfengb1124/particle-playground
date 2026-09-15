@@ -8,9 +8,11 @@
 // Extend this as new steps land — it covers Step 6 (palette, brush size,
 // drag-to-paint, eraser, pause/resume, clear), Step 7 (click-drag-release
 // launch, all four ember patterns, low-burst ignition of flammable vs.
-// non-flammable material), and Step 8 (the FPS/particle/active-cell readout
+// non-flammable material), Step 8 (the FPS/particle/active-cell readout
 // appears and its numbers move — not a substitute for the user's own manual
-// frame-rate-feel/flag-toggle checks, which need a human).
+// frame-rate-feel/flag-toggle checks, which need a human), and Step 9 (acid
+// dissolves a wood block it's dropped onto, consuming itself in the
+// process).
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -109,6 +111,35 @@ async function shot(page, name) {
   await page.mouse.move(box.x + 230, box.y + 400);
   await page.mouse.up();
   await shot(page, "eraser-drag");
+
+  // Step 9 — acid: a stone floor, a wood block on it, acid dropped on top.
+  // It should dissolve into the wood (both vanishing together) rather than
+  // just sitting there or passing through.
+  await page.click("button:has-text('Clear')");
+  await page.click("#palette button:has-text('stone')");
+  const acidFloorY = box.y + box.height - 40;
+  await page.mouse.move(box.x + 400, acidFloorY);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 500, acidFloorY, { steps: 10 });
+  await page.mouse.up();
+
+  await page.click("#palette button:has-text('wood')");
+  await page.fill("#brush-slider", "4");
+  await page.dispatchEvent("#brush-slider", "input");
+  await page.mouse.move(box.x + 450, acidFloorY - 15);
+  await page.mouse.down();
+  await page.mouse.up();
+  await shot(page, "acid-wood-block-seed");
+
+  await page.click("#palette button:has-text('acid')");
+  await page.mouse.move(box.x + 450, acidFloorY - 40);
+  await page.mouse.down();
+  await page.mouse.up();
+  await shot(page, "acid-dropped-on-wood");
+
+  await page.waitForTimeout(1500);
+  await shot(page, "acid-dissolved-into-wood");
+  await page.click("button:has-text('Clear')");
 
   // Pause: verify sim freezes.
   await page.click("button:has-text('Pause')");

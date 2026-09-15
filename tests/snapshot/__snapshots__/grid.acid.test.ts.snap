@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`acid > dissolves through a stack of wood one cell at a time until it runs out, leaving any surplus wood behind, without ever touching the stone walls 1`] = `
+"#..#
+#..#
+#..#
+#..#
+#..#
+#..#
+#..#
+#..#
+#^^#
+####"
+`;
