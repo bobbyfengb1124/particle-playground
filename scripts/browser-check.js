@@ -10,9 +10,10 @@
 // launch, all four ember patterns, low-burst ignition of flammable vs.
 // non-flammable material), Step 8 (the FPS/particle/active-cell readout
 // appears and its numbers move — not a substitute for the user's own manual
-// frame-rate-feel/flag-toggle checks, which need a human), and Step 9 (acid
+// frame-rate-feel/flag-toggle checks, which need a human), Step 9 (acid
 // dissolves a wood block it's dropped onto, consuming itself in the
-// process).
+// process), and Step 10 (a seed dropped near water grows into a stalk over
+// a few seconds).
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -139,6 +140,35 @@ async function shot(page, name) {
 
   await page.waitForTimeout(1500);
   await shot(page, "acid-dissolved-into-wood");
+  await page.click("button:has-text('Clear')");
+
+  // Step 10 — plant: a stone floor, a small water puddle on it, a seed
+  // dropped just above the puddle. It should sink to the floor and, once
+  // watered long enough, grow a stalk upward.
+  await page.click("#palette button:has-text('stone')");
+  const plantFloorY = box.y + box.height - 40;
+  await page.mouse.move(box.x + 600, plantFloorY);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 700, plantFloorY, { steps: 10 });
+  await page.mouse.up();
+
+  await page.click("#palette button:has-text('water')");
+  await page.fill("#brush-slider", "2");
+  await page.dispatchEvent("#brush-slider", "input");
+  await page.mouse.move(box.x + 650, plantFloorY - 10);
+  await page.mouse.down();
+  await page.mouse.up();
+
+  await page.click("#palette button:has-text('seed')");
+  await page.fill("#brush-slider", "0");
+  await page.dispatchEvent("#brush-slider", "input");
+  await page.mouse.move(box.x + 650, plantFloorY - 60);
+  await page.mouse.down();
+  await page.mouse.up();
+  await shot(page, "plant-seed-dropped");
+
+  await page.waitForTimeout(2500); // time to land, water, and grow one stage
+  await shot(page, "plant-grown-one-stage");
   await page.click("button:has-text('Clear')");
 
   // Pause: verify sim freezes.
