@@ -14,6 +14,7 @@ const FIREWORK_PATTERNS: ReadonlyArray<{ id: FireworkPatternValue; label: string
 const PALETTE_MATERIALS: readonly MaterialIdValue[] = [
   Material.SAND,
   Material.WATER,
+  Material.ICE,
   Material.OIL,
   Material.ACID,
   Material.SEED,

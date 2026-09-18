@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ice > freezes a water pool it falls onto, and melts back to water (then steam) when pinned against fire 1`] = `
+"#...##m##
+#...##m##
+#...##m##
+#...##m##
+#...##m##
+#...##m##
+#.i.##f##
+#iii##t##
+#########"
+`;

@@ -13,5 +13,6 @@ Build plan: one step at a time, in order. Each step is implemented, tested (`npm
 - [x] **Step 8 — Performance**: fixed-timestep loop (built in Step 1), active-cell skip optimization switched on, particle pool cap, FPS/particle-count/active-cell readout.
 - [x] **Step 9 — Acid**: new liquid material that dissolves any non-immune material it touches (stone and acid itself are immune), a mutual 1-for-1 consumption on contact, falling back to ordinary liquid movement when nothing adjacent is dissolvable.
 - [x] **Step 10 — Plant**: paintable seed that falls like sand but sinks through water/oil to reach solid ground, then grows into a plant stalk one stage at a time while adjacent to water, up to a 6-stage height cap.
+- [x] **Step 11 — Ice**: paintable material that falls like sand (never sinks through liquids), and once landed melts to water when adjacent to fire or freezes every adjacent water cell otherwise.
 
 Architecture and full decision record: see the build plan.

@@ -11,6 +11,7 @@ export const Material = {
   ACID: 9,
   SEED: 10,
   PLANT: 11,
+  ICE: 12,
 } as const;
 export type MaterialIdValue = (typeof Material)[keyof typeof Material];
 
@@ -46,4 +47,5 @@ export const MATERIALS: readonly MaterialInfo[] = [
   { name: "acid", symbol: "a", color: [150, 210, 40] },
   { name: "seed", symbol: "e", color: [180, 150, 90], flammable: true },
   { name: "plant", symbol: "p", color: [40, 160, 60], flammable: true },
+  { name: "ice", symbol: "i", color: [190, 225, 245] },
 ];
