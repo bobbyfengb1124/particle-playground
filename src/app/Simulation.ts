@@ -5,6 +5,7 @@ import { Grid } from "../grid/Grid";
 import { GridRenderer } from "../grid/GridRenderer";
 import { GridStepper } from "../grid/GridStepper";
 import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
+import { applyScene, parseScene, serializeScene } from "../grid/scene";
 import type { Bounds } from "../particles/collisions";
 import { launchRocket, updateFireworkBehaviors } from "../particles/fireworks";
 import type { Particle } from "../particles/Particle";
@@ -132,6 +133,19 @@ export class Simulation {
 
   clearGrid(): void {
     this.grid.clear();
+  }
+
+  /** Serializes the grid's material+timer state to a JSON string. */
+  exportScene(): string {
+    return JSON.stringify(serializeScene(this.grid));
+  }
+
+  /** Validates and loads a saved scene; returns null on success, or an error message on failure (grid is left untouched on failure). */
+  loadScene(json: string): string | null {
+    const result = parseScene(json, this.grid.width, this.grid.height);
+    if (!result.ok) return result.error;
+    applyScene(this.grid, result.scene);
+    return null;
   }
 
   get mode(): InteractionMode {

@@ -125,6 +125,35 @@ function createClearButton(container: HTMLElement, sim: Simulation): void {
   createButton(container, "Clear", () => sim.clearGrid());
 }
 
+function createSaveButton(container: HTMLElement, sim: Simulation): void {
+  createButton(container, "Save", () => {
+    const json = sim.exportScene();
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "particle-playground-scene.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+function createLoadButton(container: HTMLElement, sim: Simulation): void {
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "application/json";
+  fileInput.style.display = "none";
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    fileInput.value = ""; // reset so re-picking the same filename still fires change
+    if (!file) return;
+    const error = sim.loadScene(await file.text());
+    if (error) alert(error);
+  });
+  container.appendChild(fileInput);
+  createButton(container, "Load", () => fileInput.click());
+}
+
 function createPauseButton(container: HTMLElement, sim: Simulation): void {
   const refreshLabel = (): void => {
     btn.textContent = sim.isPaused ? "Resume" : "Pause";
@@ -163,5 +192,7 @@ export function createOverlay(container: HTMLElement, sim: Simulation): void {
     onInput: (v) => sim.setBrushSize(v),
   });
   createClearButton(container, sim);
+  createSaveButton(container, sim);
+  createLoadButton(container, sim);
   createPauseButton(container, sim);
 }
