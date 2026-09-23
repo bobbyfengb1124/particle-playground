@@ -10,11 +10,32 @@ describe("Simulation controls", () => {
     expect(sim.brushSize).toBe(1);
   });
 
-  it("setBrushSize clamps to a non-negative integer", () => {
+  it("setBrushSize clamps to a non-negative integer no larger than MAX_BRUSH_SIZE", () => {
     const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
     sim.setBrushSize(-5);
     expect(sim.brushSize).toBe(0);
     sim.setBrushSize(3.7);
+    expect(sim.brushSize).toBe(3);
+    sim.setBrushSize(100);
+    expect(sim.brushSize).toBe(8);
+  });
+
+  it("adjustBrushSize steps the brush size up or down and clamps at the same bounds as setBrushSize", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    sim.setBrushSize(1);
+    sim.adjustBrushSize(1);
+    expect(sim.brushSize).toBe(2);
+    sim.adjustBrushSize(-5);
+    expect(sim.brushSize).toBe(0);
+    sim.adjustBrushSize(20);
+    expect(sim.brushSize).toBe(8);
+  });
+
+  it("adjustBrushSize is a no-op outside paint mode", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    sim.setBrushSize(3);
+    sim.setMode("launch");
+    sim.adjustBrushSize(2);
     expect(sim.brushSize).toBe(3);
   });
 

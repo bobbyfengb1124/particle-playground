@@ -1,4 +1,4 @@
-import type { Simulation } from "../app/Simulation";
+import { MAX_BRUSH_SIZE, type Simulation } from "../app/Simulation";
 import { FireworkPattern, type FireworkPatternValue } from "../core/types";
 import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
 
@@ -33,7 +33,7 @@ interface SliderSpec {
   onInput: (value: number) => void;
 }
 
-function createSlider(container: HTMLElement, spec: SliderSpec): void {
+function createSlider(container: HTMLElement, spec: SliderSpec): HTMLInputElement {
   const label = document.createElement("label");
   label.htmlFor = spec.id;
   label.textContent = spec.label;
@@ -48,6 +48,7 @@ function createSlider(container: HTMLElement, spec: SliderSpec): void {
   slider.addEventListener("input", () => spec.onInput(Number(slider.value)));
 
   container.append(label, slider);
+  return slider;
 }
 
 /** Creates a button wired to `onClick`, appended to `container`, and returns it so callers can add per-button extras (a swatch color, a tracking Map entry). */
@@ -170,7 +171,7 @@ function createPauseButton(container: HTMLElement, sim: Simulation): void {
  * methods — never reaching into ParticleSystem/Grid directly. Keeps the UI a
  * thin DOM-event translator so tests can drive the same public API headlessly.
  */
-export function createOverlay(container: HTMLElement, sim: Simulation): void {
+export function createOverlay(container: HTMLElement, sim: Simulation): { syncBrushSlider(): void } {
   createSlider(container, {
     id: "wind-slider",
     label: "Wind",
@@ -182,11 +183,11 @@ export function createOverlay(container: HTMLElement, sim: Simulation): void {
   });
   createPaletteControl(container, sim);
   createFireworkPatternControl(container, sim);
-  createSlider(container, {
+  const brushSlider = createSlider(container, {
     id: "brush-slider",
     label: "Brush",
     min: 0,
-    max: 8,
+    max: MAX_BRUSH_SIZE,
     step: 1,
     value: sim.brushSize,
     onInput: (v) => sim.setBrushSize(v),
@@ -195,4 +196,12 @@ export function createOverlay(container: HTMLElement, sim: Simulation): void {
   createSaveButton(container, sim);
   createLoadButton(container, sim);
   createPauseButton(container, sim);
+
+  return {
+    // Reflects brush-size changes made via scroll/pinch, which bypass this slider's own "input" event.
+    syncBrushSlider(): void {
+      const value = String(sim.brushSize);
+      if (brushSlider.value !== value) brushSlider.value = value;
+    },
+  };
 }

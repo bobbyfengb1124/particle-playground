@@ -17,7 +17,7 @@ export function createReadout(container: HTMLElement, sim: Simulation): { tick()
   const frameTimes: number[] = [];
   let lastDomUpdate = 0;
 
-  container.textContent = "FPS: — | Particles: 0 | Active cells: 0";
+  container.textContent = `FPS: — | Particles: 0 | Active cells: 0 | Brush: ${sim.getStats().brushSize}`;
 
   return {
     tick(): void {
@@ -30,8 +30,8 @@ export function createReadout(container: HTMLElement, sim: Simulation): { tick()
 
       const windowSeconds = Math.min(now, FPS_WINDOW_MS) / 1000;
       const fps = windowSeconds > 0 ? Math.round(frameTimes.length / windowSeconds) : 0;
-      const { particleCount, activeCellCount } = sim.getStats();
-      container.textContent = `FPS: ${fps} | Particles: ${particleCount} | Active cells: ${activeCellCount}`;
+      const { particleCount, activeCellCount, brushSize } = sim.getStats();
+      container.textContent = `FPS: ${fps} | Particles: ${particleCount} | Active cells: ${activeCellCount} | Brush: ${brushSize}`;
     },
   };
 }

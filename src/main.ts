@@ -35,6 +35,7 @@ input.onDown((point) => {
   sim.paintAt(point.x, point.y);
 });
 input.onMove((point) => {
+  sim.setHoverPoint(point.x, point.y);
   if (sim.mode === "launch" || !lastPaintPoint) return;
   sim.paintStroke(lastPaintPoint.x, lastPaintPoint.y, point.x, point.y);
   lastPaintPoint = point;
@@ -46,10 +47,32 @@ input.onUp((point) => {
   }
   lastPaintPoint = null;
 });
+input.onLeave(() => sim.clearHoverPoint());
 
-const overlay = document.querySelector<HTMLDivElement>("#overlay");
-if (!overlay) throw new Error("missing #overlay container");
-createOverlay(overlay, sim);
+// Scroll wheel resizes the brush (scroll up = bigger); only hijacked in paint
+// mode — in launch mode the page's normal wheel behavior is left alone.
+input.onWheel((evt) => {
+  if (sim.mode !== "paint") return;
+  evt.preventDefault();
+  sim.adjustBrushSize(evt.deltaY < 0 ? 1 : -1);
+});
+
+// Pinch also resizes the brush. A second finger joining mid-stroke pauses
+// painting for the gesture's duration; it resumes from wherever the
+// remaining finger is once back down to a single pointer.
+input.onPinchStart(() => {
+  lastPaintPoint = null;
+});
+input.onPinchChange((steps) => {
+  sim.adjustBrushSize(steps);
+});
+input.onPinchEnd((remainingPoint) => {
+  if (sim.mode === "paint") lastPaintPoint = remainingPoint;
+});
+
+const overlayContainer = document.querySelector<HTMLDivElement>("#overlay");
+if (!overlayContainer) throw new Error("missing #overlay container");
+const overlay = createOverlay(overlayContainer, sim);
 
 const readoutContainer = document.querySelector<HTMLDivElement>("#readout");
 if (!readoutContainer) throw new Error("missing #readout container");
@@ -61,6 +84,7 @@ const clock = createFixedTimestepLoop({
   render: () => {
     sim.render(ctx);
     readout.tick();
+    overlay.syncBrushSlider();
   },
 });
 

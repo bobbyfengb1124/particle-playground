@@ -15,6 +15,7 @@ import { ParticleSystem } from "../particles/ParticleSystem";
 const DEFAULT_GRAVITY = 1400; // px/s^2 — tuned for a snappy arcade feel at this canvas scale
 const DEFAULT_DRAG_COEF = 0.8; // 1/s — applied to every click-spawned particle
 const DEFAULT_CELL_SIZE = 4; // px per grid cell
+export const MAX_BRUSH_SIZE = 8; // cells — shared clamp for the slider, scroll-wheel, and pinch input paths
 
 // A rocket always launches straight up; only how far the user dragged before
 // releasing matters, mapped onto this fraction-of-canvas-height range so it
@@ -48,6 +49,7 @@ export class Simulation {
   private readonly bounds: Bounds;
   private readonly gravity: number;
   private paused = false;
+  private hoverPoint: { x: number; y: number } | null = null;
   // One-line lever for Step 8 (or earlier) to run the CA slower than particle
   // physics; at 1 the grid steps every tick, same as particles.
   private readonly gridTicksPerSimTick = 1;
@@ -106,7 +108,23 @@ export class Simulation {
   }
 
   setBrushSize(size: number): void {
-    this.appState.brushSize = Math.max(0, Math.floor(size));
+    this.appState.brushSize = Math.min(MAX_BRUSH_SIZE, Math.max(0, Math.floor(size)));
+  }
+
+  /** Steps the brush size by a whole number of cells (a wheel tick or a pinch threshold crossed), clamped the same as setBrushSize. A no-op outside paint mode, since brush size is meaningless while launching fireworks. */
+  adjustBrushSize(delta: number): void {
+    if (this.appState.mode !== "paint") return;
+    this.setBrushSize(this.appState.brushSize + delta);
+  }
+
+  /** Records the last hovered/dragged canvas pixel position, used to draw the brush-footprint outline in paint mode. */
+  setHoverPoint(x: number, y: number): void {
+    this.hoverPoint = { x, y };
+  }
+
+  /** Clears the hover position (e.g. the pointer left the canvas) so the outline stops drawing. */
+  clearHoverPoint(): void {
+    this.hoverPoint = null;
   }
 
   /** Paints (or erases, if the selected material is EMPTY) a square brush centered on a canvas pixel position. */
@@ -210,10 +228,11 @@ export class Simulation {
   }
 
   /** Read-only snapshot for the on-screen readout — FPS is deliberately not here, since tick(dt) never reads the wall clock by design. */
-  getStats(): { particleCount: number; activeCellCount: number } {
+  getStats(): { particleCount: number; activeCellCount: number; brushSize: number } {
     return {
       particleCount: this.particles.activeCount,
       activeCellCount: this.grid.activeCount,
+      brushSize: this.appState.brushSize,
     };
   }
 
@@ -221,6 +240,20 @@ export class Simulation {
     ctx.clearRect(0, 0, this.width, this.height);
     this.gridRenderer.render(ctx, this.width, this.height);
     renderParticles(ctx, this.particles);
+    if (this.appState.mode === "paint" && this.hoverPoint) this.renderBrushOutline(ctx, this.hoverPoint);
+  }
+
+  /** Outlines the brush's actual square footprint (not a circle — the brush itself is square) centered on the hovered cell. */
+  private renderBrushOutline(ctx: CanvasRenderingContext2D, point: { x: number; y: number }): void {
+    const gx = Math.floor(point.x / this.cellSize);
+    const gy = Math.floor(point.y / this.cellSize);
+    const size = this.appState.brushSize;
+    const side = (2 * size + 1) * this.cellSize;
+    const left = (gx - size) * this.cellSize;
+    const top = (gy - size) * this.cellSize;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left + 0.5, top + 0.5, side - 1, side - 1);
   }
 
   pause(): void {
