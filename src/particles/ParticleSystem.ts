@@ -1,12 +1,15 @@
 import { ObjectPool } from "../core/ObjectPool";
 import type { Bounds } from "./collisions";
 import { applyBoundsCollision } from "./collisions";
-import { applyDrag, applyGravity, applyWind } from "./forces";
+import { applyDrag, applyGravity, applyWind, applyZoneWind } from "./forces";
 import { Particle } from "./Particle";
+import type { WindField } from "../wind/WindField";
 
 export interface ParticleEnvironment {
   gravity: number;
   wind: number;
+  /** Per-cell zone wind; omitted means no zones. */
+  windField?: WindField;
   bounds: Bounds;
 }
 
@@ -79,6 +82,7 @@ export class ParticleSystem {
       p.ay = 0;
       applyGravity(p, env.gravity);
       applyWind(p, env.wind);
+      if (env.windField) applyZoneWind(p, env.windField);
       applyDrag(p);
 
       p.vx += p.ax * dt;

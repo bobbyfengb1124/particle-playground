@@ -1,3 +1,4 @@
+import { MAX_WIND_ZONES, ZONE_WIND_MAX, type WindZone } from "../wind/WindField";
 import type { Grid } from "./Grid";
 import { MATERIALS } from "./materials";
 
@@ -6,18 +7,30 @@ export interface SceneData {
   height: number;
   material: number[];
   timer: number[];
+  /** Absent in files saved before Step 14; parseScene normalizes a missing field to []. */
+  windZones?: WindZone[];
 }
 
 export type SceneParseResult = { ok: true; scene: SceneData } | { ok: false; error: string };
 
-/** Reads a grid's per-cell material+timer into a plain JSON-serializable snapshot. */
-export function serializeScene(grid: Grid): SceneData {
+/** Reads a grid's per-cell material+timer (plus any drawn wind zones) into a plain JSON-serializable snapshot. */
+export function serializeScene(grid: Grid, windZones: readonly WindZone[] = []): SceneData {
   return {
     width: grid.width,
     height: grid.height,
     material: Array.from(grid.material),
     timer: Array.from(grid.timer),
+    windZones: windZones.map((z) => ({ ...z })),
   };
+}
+
+function isValidWindZone(value: unknown, width: number, height: number): value is WindZone {
+  if (!isPlainObject(value)) return false;
+  const { gx, gy, gw, gh, strength } = value;
+  if (![gx, gy, gw, gh].every(Number.isInteger)) return false;
+  const [x, y, w, h] = [gx, gy, gw, gh] as number[];
+  if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > width || y + h > height) return false;
+  return typeof strength === "number" && Number.isFinite(strength) && Math.abs(strength) <= ZONE_WIND_MAX;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -67,7 +80,19 @@ export function parseScene(json: string, width: number, height: number): ScenePa
     return { ok: false, error: "Could not load file: grid data is corrupted (invalid timer value)." };
   }
 
-  return { ok: true, scene: { width: data.width, height: data.height, material: data.material, timer: data.timer } };
+  let windZones: WindZone[] = [];
+  if (data.windZones !== undefined) {
+    const zones = data.windZones;
+    if (!Array.isArray(zones) || zones.length > MAX_WIND_ZONES || !zones.every((z) => isValidWindZone(z, width, height))) {
+      return { ok: false, error: "Could not load file: wind zone data is corrupted." };
+    }
+    windZones = zones.map((z: WindZone) => ({ gx: z.gx, gy: z.gy, gw: z.gw, gh: z.gh, strength: z.strength }));
+  }
+
+  return {
+    ok: true,
+    scene: { width: data.width, height: data.height, material: data.material, timer: data.timer, windZones },
+  };
 }
 
 /** Clears `grid` and repopulates every cell from an already-validated scene. */

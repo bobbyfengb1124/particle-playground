@@ -1,5 +1,6 @@
 import type { Rng } from "../core/Rng";
 import type { Grid } from "./Grid";
+import type { RuleContext } from "./rules/types";
 import { Material } from "./materials";
 import { RULES } from "./rules";
 
@@ -14,8 +15,10 @@ export class GridStepper {
   enableActiveSkip = true;
   private tickCount = 0;
 
-  step(grid: Grid, rng: Rng): void {
+  /** `wind`/`globalWind` only affect gas; with both omitted (or zero) a tick is identical to one before wind existed. */
+  step(grid: Grid, rng: Rng, wind?: Float32Array, globalWind = 0): void {
     grid.beginTick();
+    const ctx: RuleContext = { rng, wind, globalWind };
     const leftToRight = this.tickCount % 2 === 0;
     for (let y = grid.height - 1; y >= 0; y--) {
       for (let i = 0; i < grid.width; i++) {
@@ -26,7 +29,7 @@ export class GridStepper {
         if (id === Material.EMPTY) continue;
         if (this.enableActiveSkip && !grid.isActive(idx)) continue;
         const rule = RULES[id];
-        if (rule) rule(grid, x, y, { rng });
+        if (rule) rule(grid, x, y, ctx);
       }
     }
     this.tickCount++;

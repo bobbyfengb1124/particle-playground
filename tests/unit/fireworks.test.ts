@@ -130,6 +130,25 @@ describe("Fireworks: burst patterns", () => {
   });
 });
 
+describe("Fireworks: wind zones", () => {
+  it("embers bursting inside a zone drift in the zone's direction", () => {
+    const meanEmberX = (withZone: boolean): number => {
+      const sim = new Simulation({ width: 400, height: 400, cellSize: 4, seed: 3 });
+      sim.launchFromDrag(200, 380, 200, 280);
+      tickUntilEmbersAppear(sim);
+      // Added only after the burst, so the rocket's own path is identical in both runs.
+      if (withZone) {
+        sim.setZoneStrength(-800);
+        sim.addWindZoneFromDrag(0, 0, 399, 399);
+      }
+      for (let i = 0; i < 20; i++) sim.tick(1 / 60);
+      const burst = embers(sim);
+      return burst.reduce((sum, p) => sum + p.x, 0) / burst.length;
+    };
+    expect(meanEmberX(true)).toBeLessThan(meanEmberX(false) - 5);
+  });
+});
+
 describe("Fireworks: grid ignition", () => {
   it("a low-height burst over flammable material ignites it", () => {
     const sim = new Simulation({ width: 200, height: 200, cellSize: 4, seed: 7 });

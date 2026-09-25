@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyDrag, applyGravity, applyWind } from "../../src/particles/forces";
+import { applyDrag, applyGravity, applyWind, applyZoneWind } from "../../src/particles/forces";
 import { Particle } from "../../src/particles/Particle";
+import { WindField } from "../../src/wind/WindField";
 
 describe("forces", () => {
   it("applyGravity adds a downward acceleration", () => {
@@ -35,6 +36,22 @@ describe("forces", () => {
     applyDrag(p);
     expect(p.ax).toBe(0);
     expect(p.ay).toBe(0);
+  });
+
+  it("applyZoneWind adds the field value under the particle onto existing acceleration", () => {
+    const field = new WindField(4, 4, 4);
+    field.rebuild([{ gx: 1, gy: 1, gw: 1, gh: 1, strength: 250 }]);
+    const inside = new Particle();
+    inside.x = 6;
+    inside.y = 6;
+    applyWind(inside, 100);
+    applyZoneWind(inside, field);
+    expect(inside.ax).toBe(350);
+
+    const outside = new Particle();
+    applyWind(outside, 100);
+    applyZoneWind(outside, field);
+    expect(outside.ax).toBe(100);
   });
 
   it("forces accumulate onto existing acceleration rather than overwrite it", () => {

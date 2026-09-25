@@ -1,6 +1,7 @@
 import { MAX_BRUSH_SIZE, type Simulation } from "../app/Simulation";
 import { FireworkPattern, type FireworkPatternValue } from "../core/types";
 import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
+import { MAX_WIND_ZONES, ZONE_WIND_MAX } from "../wind/WindField";
 
 const FIREWORK_PATTERNS: ReadonlyArray<{ id: FireworkPatternValue; label: string }> = [
   { id: FireworkPattern.RING, label: "Ring" },
@@ -61,16 +62,22 @@ function createButton(container: HTMLElement, label: string, onClick: () => void
   return btn;
 }
 
-/** Material swatches, an eraser, and a Launch tool — exactly one is ever active, deciding what a canvas click/drag does. */
-function createPaletteControl(container: HTMLElement, sim: Simulation): void {
+function zoneButtonLabel(sim: Simulation): string {
+  return `Wind Zone (${sim.windZones.length}/${MAX_WIND_ZONES})`;
+}
+
+/** Material swatches, an eraser, a Launch tool, and a Wind Zone tool — exactly one is ever active, deciding what a canvas click/drag does. Returns the Wind Zone button so its count label can be kept current. */
+function createPaletteControl(container: HTMLElement, sim: Simulation): HTMLButtonElement {
   const palette = document.createElement("div");
   palette.id = "palette";
 
   const buttons = new Map<MaterialIdValue, HTMLButtonElement>();
   let launchBtn!: HTMLButtonElement;
+  let zoneBtn!: HTMLButtonElement;
   const activate = (btn: HTMLButtonElement): void => {
     for (const b of buttons.values()) b.classList.toggle("active", b === btn);
     launchBtn.classList.toggle("active", btn === launchBtn);
+    zoneBtn.classList.toggle("active", btn === zoneBtn);
   };
 
   const selectMaterial = (material: MaterialIdValue): void => {
@@ -96,10 +103,18 @@ function createPaletteControl(container: HTMLElement, sim: Simulation): void {
   });
   launchBtn.style.setProperty("--swatch", "rgb(255, 200, 60)");
 
+  zoneBtn = createButton(palette, zoneButtonLabel(sim), () => {
+    sim.setMode("wind-zone");
+    activate(zoneBtn);
+  });
+  zoneBtn.style.setProperty("--swatch", "rgb(80, 220, 255)");
+
   if (sim.mode === "launch") activate(launchBtn);
+  else if (sim.mode === "wind-zone") activate(zoneBtn);
   else activate(buttons.get(sim.selectedMaterial)!);
 
   container.appendChild(palette);
+  return zoneBtn;
 }
 
 /** Ring/Willow/Crossette/Strobe — which pattern the next rocket bursts into, following the same button-group convention as the material palette. */
@@ -124,6 +139,10 @@ function createFireworkPatternControl(container: HTMLElement, sim: Simulation): 
 
 function createClearButton(container: HTMLElement, sim: Simulation): void {
   createButton(container, "Clear", () => sim.clearGrid());
+}
+
+function createClearZonesButton(container: HTMLElement, sim: Simulation): void {
+  createButton(container, "Clear Zones", () => sim.clearWindZones());
 }
 
 function createSaveButton(container: HTMLElement, sim: Simulation): void {
@@ -171,7 +190,7 @@ function createPauseButton(container: HTMLElement, sim: Simulation): void {
  * methods — never reaching into ParticleSystem/Grid directly. Keeps the UI a
  * thin DOM-event translator so tests can drive the same public API headlessly.
  */
-export function createOverlay(container: HTMLElement, sim: Simulation): { syncBrushSlider(): void } {
+export function createOverlay(container: HTMLElement, sim: Simulation): { syncBrushSlider(): void; syncZoneCount(): void } {
   createSlider(container, {
     id: "wind-slider",
     label: "Wind",
@@ -181,8 +200,17 @@ export function createOverlay(container: HTMLElement, sim: Simulation): { syncBr
     value: sim.wind,
     onInput: (v) => sim.setWind(v),
   });
-  createPaletteControl(container, sim);
+  const zoneBtn = createPaletteControl(container, sim);
   createFireworkPatternControl(container, sim);
+  createSlider(container, {
+    id: "zone-wind-slider",
+    label: "Zone wind",
+    min: -ZONE_WIND_MAX,
+    max: ZONE_WIND_MAX,
+    step: 50,
+    value: sim.zoneStrength,
+    onInput: (v) => sim.setZoneStrength(v),
+  });
   const brushSlider = createSlider(container, {
     id: "brush-slider",
     label: "Brush",
@@ -193,6 +221,7 @@ export function createOverlay(container: HTMLElement, sim: Simulation): { syncBr
     onInput: (v) => sim.setBrushSize(v),
   });
   createClearButton(container, sim);
+  createClearZonesButton(container, sim);
   createSaveButton(container, sim);
   createLoadButton(container, sim);
   createPauseButton(container, sim);
@@ -202,6 +231,11 @@ export function createOverlay(container: HTMLElement, sim: Simulation): { syncBr
     syncBrushSlider(): void {
       const value = String(sim.brushSize);
       if (brushSlider.value !== value) brushSlider.value = value;
+    },
+    // Zones change via canvas drags, Clear Zones, and Load — polling here covers all three.
+    syncZoneCount(): void {
+      const label = zoneButtonLabel(sim);
+      if (zoneBtn.textContent !== label) zoneBtn.textContent = label;
     },
   };
 }

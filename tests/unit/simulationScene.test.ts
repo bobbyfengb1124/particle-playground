@@ -49,6 +49,44 @@ describe("Simulation save/load round trip", () => {
     expect(Array.from(sim.grid.timer)).toEqual(beforeTimer);
   });
 
+  it("restores wind zones after they were cleared", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    sim.addWindZoneFromDrag(0, 0, 20, 20);
+    sim.setZoneStrength(-600);
+    sim.addWindZoneFromDrag(10, 10, 30, 30);
+    const before = sim.windZones.map((z) => ({ ...z }));
+
+    const json = sim.exportScene();
+    sim.clearWindZones();
+    expect(sim.loadScene(json)).toBeNull();
+    expect(sim.windZones).toEqual(before);
+  });
+
+  it("loading an older file with no windZones field clears the current zones", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    const oldFile = JSON.parse(sim.exportScene());
+    delete oldFile.windZones;
+    sim.addWindZoneFromDrag(0, 0, 20, 20);
+
+    expect(sim.loadScene(JSON.stringify(oldFile))).toBeNull();
+    expect(sim.windZones.length).toBe(0);
+  });
+
+  it("leaves the grid and zones untouched when the wind zone data is invalid", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    const bad = JSON.parse(sim.exportScene());
+    bad.windZones = [{ gx: 0, gy: 0, gw: 1, gh: 1, strength: 9999 }];
+    bad.material[0] = Material.STONE;
+    sim.grid.setMaterial(1, 1, Material.SAND);
+    sim.addWindZoneFromDrag(0, 0, 20, 20);
+    const beforeMaterial = Array.from(sim.grid.material);
+    const beforeZones = sim.windZones.map((z) => ({ ...z }));
+
+    expect(sim.loadScene(JSON.stringify(bad))).not.toBeNull();
+    expect(Array.from(sim.grid.material)).toEqual(beforeMaterial);
+    expect(sim.windZones).toEqual(beforeZones);
+  });
+
   it("leaves the grid untouched when loading a scene with mismatched dimensions", () => {
     const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
     sim.grid.setMaterial(1, 1, Material.SAND);

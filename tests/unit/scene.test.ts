@@ -106,9 +106,41 @@ describe("parseScene", () => {
     expect(result.error).toBe("Could not load file: grid data is corrupted (invalid timer value).");
   });
 
-  it("accepts a well-formed scene", () => {
+  it("accepts a well-formed scene, normalizing a missing windZones field (a pre-Step-14 file) to []", () => {
     const scene = { width, height, material: [0, 1, 2, 3], timer: [0, 0, 0, 5] };
     const result = parseScene(JSON.stringify(scene), width, height);
+    expect(result).toEqual({ ok: true, scene: { ...scene, windZones: [] } });
+  });
+
+  it("accepts valid wind zones", () => {
+    const windZones = [{ gx: 0, gy: 0, gw: 2, gh: 1, strength: -800 }];
+    const scene = { width, height, material: [0, 0, 0, 0], timer: [0, 0, 0, 0], windZones };
+    const result = parseScene(JSON.stringify(scene), width, height);
     expect(result).toEqual({ ok: true, scene });
+  });
+
+  it.each([
+    ["not an array", { gx: 0 }],
+    ["a non-integer coordinate", [{ gx: 0.5, gy: 0, gw: 1, gh: 1, strength: 100 }]],
+    ["a zero-size zone", [{ gx: 0, gy: 0, gw: 0, gh: 1, strength: 100 }]],
+    ["a zone past the grid edge", [{ gx: 1, gy: 0, gw: 2, gh: 1, strength: 100 }]],
+    ["a strength beyond ±800", [{ gx: 0, gy: 0, gw: 1, gh: 1, strength: 900 }]],
+    ["a non-numeric strength", [{ gx: 0, gy: 0, gw: 1, gh: 1, strength: "strong" }]],
+    ["more than 32 zones", Array(33).fill({ gx: 0, gy: 0, gw: 1, gh: 1, strength: 100 })],
+  ])("rejects wind zone data with %s", (_label, windZones) => {
+    const scene = { width, height, material: [0, 0, 0, 0], timer: [0, 0, 0, 0], windZones };
+    const result = parseScene(JSON.stringify(scene), width, height);
+    expect(result).toEqual({ ok: false, error: "Could not load file: wind zone data is corrupted." });
+  });
+});
+
+describe("serializeScene wind zones", () => {
+  it("always writes a windZones array, round-tripping the zones it was given", () => {
+    const grid = new Grid(4, 4);
+    expect(serializeScene(grid).windZones).toEqual([]);
+
+    const zones = [{ gx: 1, gy: 1, gw: 2, gh: 3, strength: 250 }];
+    const result = parseScene(JSON.stringify(serializeScene(grid, zones)), 4, 4);
+    expect(result.ok && result.scene.windZones).toEqual(zones);
   });
 });

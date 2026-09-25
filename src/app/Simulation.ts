@@ -11,6 +11,7 @@ import { launchRocket, updateFireworkBehaviors } from "../particles/fireworks";
 import type { Particle } from "../particles/Particle";
 import { renderParticles } from "../particles/ParticleRenderer";
 import { ParticleSystem } from "../particles/ParticleSystem";
+import { MAX_WIND_ZONES, normalizeZoneRect, WindField, ZONE_WIND_MAX, type WindZone } from "../wind/WindField";
 
 const DEFAULT_GRAVITY = 1400; // px/s^2 — tuned for a snappy arcade feel at this canvas scale
 const DEFAULT_DRAG_COEF = 0.8; // 1/s — applied to every click-spawned particle
@@ -50,6 +51,10 @@ export class Simulation {
   private readonly gravity: number;
   private paused = false;
   private hoverPoint: { x: number; y: number } | null = null;
+  private readonly windField: WindField;
+  private zones: WindZone[] = [];
+  /** The in-progress wind-zone drag (canvas pixels), drawn as a dashed preview until pointerup. */
+  private zoneDraft: { x0: number; y0: number; x1: number; y1: number } | null = null;
   // One-line lever for Step 8 (or earlier) to run the CA slower than particle
   // physics; at 1 the grid steps every tick, same as particles.
   private readonly gridTicksPerSimTick = 1;
@@ -69,6 +74,7 @@ export class Simulation {
     const gridHeight = Math.max(1, Math.floor(this.height / this.cellSize));
     this.grid = new Grid(gridWidth, gridHeight);
     this.gridRenderer = new GridRenderer(this.grid);
+    this.windField = new WindField(gridWidth, gridHeight, this.cellSize);
   }
 
   spawnParticlesAt(x: number, y: number, count = 1): void {
@@ -153,16 +159,54 @@ export class Simulation {
     this.grid.clear();
   }
 
-  /** Serializes the grid's material+timer state to a JSON string. */
-  exportScene(): string {
-    return JSON.stringify(serializeScene(this.grid));
+  get windZones(): readonly WindZone[] {
+    return this.zones;
   }
 
-  /** Validates and loads a saved scene; returns null on success, or an error message on failure (grid is left untouched on failure). */
+  get zoneStrength(): number {
+    return this.appState.zoneStrength;
+  }
+
+  setZoneStrength(strength: number): void {
+    this.appState.zoneStrength = Math.min(ZONE_WIND_MAX, Math.max(-ZONE_WIND_MAX, strength));
+  }
+
+  /** Turns a finished drag into a zone at the current strength; returns false when ignored (cap reached, a plain click, or zero strength). */
+  addWindZoneFromDrag(x0: number, y0: number, x1: number, y1: number): boolean {
+    if (this.zones.length >= MAX_WIND_ZONES) return false;
+    const zone = normalizeZoneRect(x0, y0, x1, y1, this.cellSize, this.grid.width, this.grid.height, this.appState.zoneStrength);
+    if (!zone) return false;
+    this.zones.push(zone);
+    this.windField.rebuild(this.zones);
+    return true;
+  }
+
+  /** Removes every wind zone — independent of clearGrid, which leaves zones in place. */
+  clearWindZones(): void {
+    this.zones = [];
+    this.windField.rebuild(this.zones);
+  }
+
+  setZoneDraft(x0: number, y0: number, x1: number, y1: number): void {
+    this.zoneDraft = { x0, y0, x1, y1 };
+  }
+
+  clearZoneDraft(): void {
+    this.zoneDraft = null;
+  }
+
+  /** Serializes the grid's material+timer state and the wind zones to a JSON string. */
+  exportScene(): string {
+    return JSON.stringify(serializeScene(this.grid, this.zones));
+  }
+
+  /** Validates and loads a saved scene; returns null on success, or an error message on failure (grid and zones are left untouched on failure). A file with no zones clears the current ones — a load replaces the whole scene. */
   loadScene(json: string): string | null {
     const result = parseScene(json, this.grid.width, this.grid.height);
     if (!result.ok) return result.error;
     applyScene(this.grid, result.scene);
+    this.zones = result.scene.windZones ?? [];
+    this.windField.rebuild(this.zones);
     return null;
   }
 
@@ -201,13 +245,14 @@ export class Simulation {
     this.particles.update(dt, {
       gravity: this.gravity,
       wind: this.appState.wind,
+      windField: this.windField,
       bounds: this.bounds,
     });
     updateFireworkBehaviors(this.particles, dt, this.particleRng);
     this.igniteEmbersOnLanding();
     this.gridTickCounter++;
     if (this.gridTickCounter % this.gridTicksPerSimTick === 0) {
-      this.gridStepper.step(this.grid, this.gridRng);
+      this.gridStepper.step(this.grid, this.gridRng, this.windField.values, this.appState.wind);
     }
   }
 
@@ -239,8 +284,50 @@ export class Simulation {
   render(ctx: CanvasRenderingContext2D): void {
     ctx.clearRect(0, 0, this.width, this.height);
     this.gridRenderer.render(ctx, this.width, this.height);
+    this.renderWindZones(ctx);
     renderParticles(ctx, this.particles);
     if (this.appState.mode === "paint" && this.hoverPoint) this.renderBrushOutline(ctx, this.hoverPoint);
+    if (this.appState.mode === "wind-zone" && this.zoneDraft) this.renderZoneDraft(ctx, this.zoneDraft);
+  }
+
+  /** Faint cyan fill (stronger zones are more opaque), a 1px outline, and a row of ›/‹ chevrons pointing downwind. */
+  private renderWindZones(ctx: CanvasRenderingContext2D): void {
+    if (this.zones.length === 0) return;
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const z of this.zones) {
+      const left = z.gx * this.cellSize;
+      const top = z.gy * this.cellSize;
+      const w = z.gw * this.cellSize;
+      const h = z.gh * this.cellSize;
+      const alpha = 0.05 + 0.15 * (Math.abs(z.strength) / ZONE_WIND_MAX);
+      ctx.fillStyle = `rgba(80, 220, 255, ${alpha})`;
+      ctx.fillRect(left, top, w, h);
+      ctx.strokeStyle = "rgba(80, 220, 255, 0.5)";
+      ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h - 1);
+      if (w >= 12 && h >= 12) {
+        ctx.fillStyle = "rgba(80, 220, 255, 0.6)";
+        const glyph = z.strength > 0 ? "›" : "‹";
+        const count = Math.max(1, Math.min(8, Math.floor(w / 24)));
+        for (let i = 0; i < count; i++) ctx.fillText(glyph, left + ((i + 0.5) * w) / count, top + h / 2);
+      }
+    }
+    ctx.restore();
+  }
+
+  /** Dashed preview of the zone being dragged, snapped to the same cells the finished zone will cover. */
+  private renderZoneDraft(ctx: CanvasRenderingContext2D, d: { x0: number; y0: number; x1: number; y1: number }): void {
+    const zone = normalizeZoneRect(d.x0, d.y0, d.x1, d.y1, this.cellSize, this.grid.width, this.grid.height, 1);
+    if (!zone) return;
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(zone.gx * this.cellSize + 0.5, zone.gy * this.cellSize + 0.5, zone.gw * this.cellSize - 1, zone.gh * this.cellSize - 1);
+    ctx.restore();
   }
 
   /** Outlines the brush's actual square footprint (not a circle — the brush itself is square) centered on the hovered cell. */

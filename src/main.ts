@@ -22,13 +22,20 @@ const sim = new Simulation({ width: canvas.width, height: canvas.height, seed: 1
 // ends it. In "launch" mode the same gesture instead means click-drag-release:
 // pointerdown just remembers the launch point, and the actual rocket only
 // fires on pointerup, once the full drag distance (i.e. power) is known.
+// "wind-zone" mode works the same way: the drag previews a rectangle, and
+// the zone is only created on pointerup.
 const input = new PointerInput(canvas);
 let lastPaintPoint: CanvasPoint | null = null;
 let launchStartPoint: CanvasPoint | null = null;
+let zoneStartPoint: CanvasPoint | null = null;
 
 input.onDown((point) => {
   if (sim.mode === "launch") {
     launchStartPoint = point;
+    return;
+  }
+  if (sim.mode === "wind-zone") {
+    zoneStartPoint = point;
     return;
   }
   lastPaintPoint = point;
@@ -36,7 +43,11 @@ input.onDown((point) => {
 });
 input.onMove((point) => {
   sim.setHoverPoint(point.x, point.y);
-  if (sim.mode === "launch" || !lastPaintPoint) return;
+  if (zoneStartPoint) {
+    sim.setZoneDraft(zoneStartPoint.x, zoneStartPoint.y, point.x, point.y);
+    return;
+  }
+  if (sim.mode !== "paint" || !lastPaintPoint) return;
   sim.paintStroke(lastPaintPoint.x, lastPaintPoint.y, point.x, point.y);
   lastPaintPoint = point;
 });
@@ -44,6 +55,11 @@ input.onUp((point) => {
   if (launchStartPoint) {
     sim.launchFromDrag(launchStartPoint.x, launchStartPoint.y, point.x, point.y);
     launchStartPoint = null;
+  }
+  if (zoneStartPoint) {
+    sim.addWindZoneFromDrag(zoneStartPoint.x, zoneStartPoint.y, point.x, point.y);
+    zoneStartPoint = null;
+    sim.clearZoneDraft();
   }
   lastPaintPoint = null;
 });
@@ -59,9 +75,12 @@ input.onWheel((evt) => {
 
 // Pinch also resizes the brush. A second finger joining mid-stroke pauses
 // painting for the gesture's duration; it resumes from wherever the
-// remaining finger is once back down to a single pointer.
+// remaining finger is once back down to a single pointer. A zone drag is
+// cancelled outright, since the second pointer means onUp never fires for it.
 input.onPinchStart(() => {
   lastPaintPoint = null;
+  zoneStartPoint = null;
+  sim.clearZoneDraft();
 });
 input.onPinchChange((steps) => {
   sim.adjustBrushSize(steps);
@@ -85,6 +104,7 @@ const clock = createFixedTimestepLoop({
     sim.render(ctx);
     readout.tick();
     overlay.syncBrushSlider();
+    overlay.syncZoneCount();
   },
 });
 

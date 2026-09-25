@@ -39,6 +39,70 @@ describe("Simulation controls", () => {
     expect(sim.brushSize).toBe(3);
   });
 
+  it("adjustBrushSize is a no-op in wind-zone mode too", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    sim.setBrushSize(3);
+    sim.setMode("wind-zone");
+    sim.adjustBrushSize(2);
+    expect(sim.brushSize).toBe(3);
+  });
+
+  it("addWindZoneFromDrag creates a cell-snapped zone at the current strength", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    expect(sim.zoneStrength).toBe(300);
+    sim.setZoneStrength(-450);
+    expect(sim.addWindZoneFromDrag(20, 20, 4, 8)).toBe(true);
+    expect(sim.windZones).toEqual([{ gx: 1, gy: 2, gw: 5, gh: 4, strength: -450 }]);
+  });
+
+  it("a later strength change does not alter zones already drawn", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    sim.addWindZoneFromDrag(0, 0, 20, 20);
+    sim.setZoneStrength(700);
+    expect(sim.windZones[0].strength).toBe(300);
+  });
+
+  it("addWindZoneFromDrag ignores a plain click, zero strength, and drags past the 32-zone cap", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    expect(sim.addWindZoneFromDrag(10, 10, 10, 10)).toBe(false);
+    sim.setZoneStrength(0);
+    expect(sim.addWindZoneFromDrag(0, 0, 20, 20)).toBe(false);
+    expect(sim.windZones.length).toBe(0);
+
+    sim.setZoneStrength(100);
+    for (let i = 0; i < 32; i++) expect(sim.addWindZoneFromDrag(0, 0, 20, 20)).toBe(true);
+    expect(sim.addWindZoneFromDrag(0, 0, 20, 20)).toBe(false);
+    expect(sim.windZones.length).toBe(32);
+  });
+
+  it("setZoneStrength clamps to ±800", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    sim.setZoneStrength(5000);
+    expect(sim.zoneStrength).toBe(800);
+    sim.setZoneStrength(-5000);
+    expect(sim.zoneStrength).toBe(-800);
+  });
+
+  it("clearWindZones removes every zone, and clearGrid leaves zones alone", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    sim.addWindZoneFromDrag(0, 0, 20, 20);
+    sim.clearGrid();
+    expect(sim.windZones.length).toBe(1);
+    sim.clearWindZones();
+    expect(sim.windZones.length).toBe(0);
+  });
+
+  it("clearWindZones stops zones from pushing gas", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4, seed: 2 });
+    sim.setZoneStrength(800);
+    sim.addWindZoneFromDrag(0, 0, 39, 39);
+    sim.clearWindZones();
+    sim.grid.setMaterial(5, 9, Material.SMOKE);
+    runTicks(sim, 5);
+    // With no wind the smoke rises straight up through open air.
+    expect(sim.grid.get(5, 4)).toBe(Material.SMOKE);
+  });
+
   it("clearGrid empties every cell, including stone", () => {
     const sim = new Simulation({ width: 20, height: 20, cellSize: 4 });
     sim.grid.setMaterial(1, 1, Material.STONE);

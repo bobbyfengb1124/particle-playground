@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Simulation } from "../../src/app/Simulation";
+import { ParticleKind } from "../../src/core/types";
 import { runTicks } from "./helpers/headlessRunner";
 import { serializeParticles } from "./helpers/serialize";
 
@@ -27,6 +28,50 @@ describe("gravity, wind, drag, and bounce", () => {
     const [withWindResult] = serializeParticles(withWind.particles);
 
     expect(withWindResult.x).toBeGreaterThan(withoutWind.x);
+  });
+
+  it("drifts sideways inside a wind zone", () => {
+    const noZone = new Simulation({ width: 300, height: 300, seed: 3 });
+    noZone.spawnParticlesAt(150, 20, 1);
+    runTicks(noZone, 20);
+    const [withoutZone] = serializeParticles(noZone.particles);
+
+    const withZone = new Simulation({ width: 300, height: 300, seed: 3 });
+    expect(withZone.addWindZoneFromDrag(0, 0, 299, 299)).toBe(true); // default +300 strength, whole canvas
+    withZone.spawnParticlesAt(150, 20, 1);
+    runTicks(withZone, 20);
+    const [withZoneResult] = serializeParticles(withZone.particles);
+
+    expect(withZoneResult.x).toBeGreaterThan(withoutZone.x);
+  });
+
+  it("a particle that never enters a zone moves exactly as if no zone existed", () => {
+    const noZone = new Simulation({ width: 300, height: 300, seed: 3 });
+    noZone.spawnParticlesAt(150, 20, 1);
+    runTicks(noZone, 20);
+
+    const farZone = new Simulation({ width: 300, height: 300, seed: 3 });
+    farZone.setZoneStrength(800);
+    farZone.addWindZoneFromDrag(0, 0, 40, 40);
+    farZone.spawnParticlesAt(150, 20, 1);
+    runTicks(farZone, 20);
+
+    expect(serializeParticles(farZone.particles)).toEqual(serializeParticles(noZone.particles));
+  });
+
+  it("a rocket launched up through a zone ends up displaced sideways", () => {
+    const sim = new Simulation({ width: 200, height: 800, cellSize: 4, seed: 1 });
+    sim.setZoneStrength(-800);
+    sim.addWindZoneFromDrag(0, 300, 199, 700);
+    sim.launchFromDrag(100, 780, 100, 380);
+    let minRocketX = 100;
+    for (let i = 0; i < 120; i++) {
+      sim.tick(1 / 60);
+      sim.particles.forEachActive((p) => {
+        if (p.kind === ParticleKind.ROCKET) minRocketX = Math.min(minRocketX, p.x);
+      });
+    }
+    expect(minRocketX).toBeLessThan(99);
   });
 
   it("settles rather than bouncing forever, and each bounce's speed decays", () => {
