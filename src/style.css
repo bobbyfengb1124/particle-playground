@@ -48,13 +48,15 @@ body {
 }
 
 #palette,
-#firework-patterns {
+#firework-patterns,
+#firework-colors {
   display: flex;
   gap: 4px;
 }
 
 #palette button,
 #firework-patterns button,
+#firework-colors button,
 #overlay > button {
   background: #1a1d22;
   color: #e8e8e8;
@@ -64,12 +66,14 @@ body {
   cursor: pointer;
 }
 
-#palette button {
+#palette button,
+#firework-colors button {
   position: relative;
   padding-left: 22px;
 }
 
-#palette button::before {
+#palette button::before,
+#firework-colors button::before {
   content: "";
   position: absolute;
   left: 6px;
@@ -84,6 +88,7 @@ body {
 
 #palette button.active,
 #firework-patterns button.active,
+#firework-colors button.active,
 #overlay > button.active {
   border-color: #e8e8e8;
   background: #2a2e35;

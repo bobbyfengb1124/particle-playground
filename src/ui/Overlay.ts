@@ -1,6 +1,12 @@
 import { MAX_BRUSH_SIZE, type Simulation } from "../app/Simulation";
-import { FireworkPattern, type FireworkPatternValue } from "../core/types";
+import {
+  FireworkColor,
+  FireworkPattern,
+  type FireworkColorValue,
+  type FireworkPatternValue,
+} from "../core/types";
 import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
+import { FIREWORK_COLOR_PRESETS } from "../particles/fireworks";
 import { MAX_WIND_ZONES, ZONE_WIND_MAX } from "../wind/WindField";
 
 const FIREWORK_PATTERNS: ReadonlyArray<{ id: FireworkPatternValue; label: string }> = [
@@ -8,6 +14,15 @@ const FIREWORK_PATTERNS: ReadonlyArray<{ id: FireworkPatternValue; label: string
   { id: FireworkPattern.WILLOW, label: "Willow" },
   { id: FireworkPattern.CROSSETTE, label: "Crossette" },
   { id: FireworkPattern.STROBE, label: "Strobe" },
+];
+
+const FIREWORK_COLORS: ReadonlyArray<{ id: FireworkColorValue; label: string }> = [
+  { id: FireworkColor.GOLD, label: "Gold" },
+  { id: FireworkColor.RED, label: "Red" },
+  { id: FireworkColor.GREEN, label: "Green" },
+  { id: FireworkColor.BLUE, label: "Blue" },
+  { id: FireworkColor.PURPLE, label: "Purple" },
+  { id: FireworkColor.WHITE, label: "White" },
 ];
 
 // Smoke/steam are byproducts of fire/water, not something a user paints
@@ -137,6 +152,27 @@ function createFireworkPatternControl(container: HTMLElement, sim: Simulation): 
   container.appendChild(group);
 }
 
+/** Gold/Red/Green/Blue/Purple/White — which colour the next rocket bursts in. Like the pattern buttons, picking one doesn't change the canvas mode. */
+function createFireworkColorControl(container: HTMLElement, sim: Simulation): void {
+  const group = document.createElement("div");
+  group.id = "firework-colors";
+
+  const buttons = new Map<FireworkColorValue, HTMLButtonElement>();
+  const select = (color: FireworkColorValue): void => {
+    sim.setFireworkColor(color);
+    for (const [id, btn] of buttons) btn.classList.toggle("active", id === color);
+  };
+
+  for (const { id, label } of FIREWORK_COLORS) {
+    const btn = createButton(group, label, () => select(id));
+    btn.style.setProperty("--swatch", `rgb(${FIREWORK_COLOR_PRESETS[id].swatch.join(",")})`);
+    buttons.set(id, btn);
+  }
+
+  select(sim.fireworkColor);
+  container.appendChild(group);
+}
+
 function createClearButton(container: HTMLElement, sim: Simulation): void {
   createButton(container, "Clear", () => sim.clearGrid());
 }
@@ -202,6 +238,7 @@ export function createOverlay(container: HTMLElement, sim: Simulation): { syncBr
   });
   const zoneBtn = createPaletteControl(container, sim);
   createFireworkPatternControl(container, sim);
+  createFireworkColorControl(container, sim);
   createSlider(container, {
     id: "zone-wind-slider",
     label: "Zone wind",

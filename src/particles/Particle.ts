@@ -1,5 +1,5 @@
 import type { Poolable } from "../core/ObjectPool";
-import { EmberBehavior, ParticleKind } from "../core/types";
+import { EmberBehavior, FireworkColor, ParticleKind } from "../core/types";
 
 /**
  * Plain pooled data record. `behavior`/`behaviorTimer`/`behaviorFlag` are
@@ -7,7 +7,9 @@ import { EmberBehavior, ParticleKind } from "../core/types";
  * for a ROCKET, `behavior` holds its chosen FireworkPattern until burst; for
  * an EMBER, it holds its EmberBehavior, with `behaviorTimer`/`behaviorFlag`
  * as that behavior's own scratch state (strobe's flicker countdown +
- * visibility, crossette's one-shot split guard). See particles/fireworks.ts.
+ * visibility, crossette's one-shot split guard). `fireworkColor` is a
+ * dedicated slot: rockets and embers both carry their launch colour in it so
+ * crossette sub-embers can inherit it. See particles/fireworks.ts.
  */
 export class Particle implements Poolable {
   poolSlot = -1;
@@ -36,6 +38,7 @@ export class Particle implements Poolable {
   behavior: number = EmberBehavior.NONE;
   behaviorTimer = 0;
   behaviorFlag = 0;
+  fireworkColor: number = FireworkColor.GOLD;
 
   reset(): void {
     this.x = 0;
@@ -57,5 +60,6 @@ export class Particle implements Poolable {
     this.behavior = EmberBehavior.NONE;
     this.behaviorTimer = 0;
     this.behaviorFlag = 0;
+    this.fireworkColor = FireworkColor.GOLD;
   }
 }

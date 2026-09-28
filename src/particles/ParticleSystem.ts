@@ -30,6 +30,7 @@ export interface ParticleInit {
   behavior?: number;
   behaviorTimer?: number;
   behaviorFlag?: number;
+  fireworkColor?: number;
 }
 
 export class ParticleSystem {
@@ -68,6 +69,7 @@ export class ParticleSystem {
     if (init.behavior !== undefined) p.behavior = init.behavior;
     if (init.behaviorTimer !== undefined) p.behaviorTimer = init.behaviorTimer;
     if (init.behaviorFlag !== undefined) p.behaviorFlag = init.behaviorFlag;
+    if (init.fireworkColor !== undefined) p.fireworkColor = init.fireworkColor;
     return p;
   }
 

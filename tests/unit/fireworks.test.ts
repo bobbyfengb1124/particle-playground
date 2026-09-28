@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Simulation } from "../../src/app/Simulation";
-import { EmberBehavior, FireworkPattern, ParticleKind } from "../../src/core/types";
+import { EmberBehavior, FireworkColor, FireworkPattern, ParticleKind, type FireworkColorValue } from "../../src/core/types";
 import { Material } from "../../src/grid/materials";
+import { FIREWORK_COLOR_PRESETS } from "../../src/particles/fireworks";
 import type { Particle } from "../../src/particles/Particle";
 
 /** Ticks `sim` until at least one ember exists (i.e. some rocket has burst), or throws if it never does. */
@@ -127,6 +128,109 @@ describe("Fireworks: burst patterns", () => {
       flags.add(sample.behaviorFlag);
     }
     expect(flags).toEqual(new Set([0, 1]));
+  });
+});
+
+/** True if `p`'s RGB falls inside the given preset's channel bands. */
+function inPreset(p: Particle, color: FireworkColorValue): boolean {
+  const { r, g, b } = FIREWORK_COLOR_PRESETS[color];
+  const within = (v: number, [lo, hi]: readonly [number, number]): boolean => v >= lo && v <= hi;
+  return within(p.colorR, r) && within(p.colorG, g) && within(p.colorB, b);
+}
+
+function rockets(sim: Simulation): Particle[] {
+  const out: Particle[] = [];
+  sim.particles.forEachActive((p) => {
+    if (p.kind === ParticleKind.ROCKET) out.push(p);
+  });
+  return out;
+}
+
+describe("Fireworks: colours", () => {
+  it("defaults to the original gold embers", () => {
+    const sim = new Simulation({ width: 400, height: 400, cellSize: 4, seed: 9 });
+    expect(sim.fireworkColor).toBe(FireworkColor.GOLD);
+    sim.launchFromDrag(200, 380, 200, 280);
+    tickUntilEmbersAppear(sim);
+
+    for (const p of embers(sim)) {
+      expect(p.colorR).toBe(255);
+      expect(p.colorG).toBeGreaterThanOrEqual(140);
+      expect(p.colorG).toBeLessThanOrEqual(200);
+      expect(p.colorB).toBeGreaterThanOrEqual(40);
+      expect(p.colorB).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("the rising rocket is tinted with its launch colour", () => {
+    const sim = new Simulation({ width: 400, height: 400, cellSize: 4, seed: 9 });
+    sim.setFireworkColor(FireworkColor.RED);
+    sim.launchFromDrag(200, 380, 200, 280);
+
+    const [rocket] = rockets(sim);
+    expect([rocket.colorR, rocket.colorG, rocket.colorB]).toEqual([...FIREWORK_COLOR_PRESETS[FireworkColor.RED].swatch]);
+  });
+
+  it("embers burst in the chosen colour", () => {
+    const sim = new Simulation({ width: 400, height: 400, cellSize: 4, seed: 10 });
+    sim.setFireworkColor(FireworkColor.BLUE);
+    sim.launchFromDrag(200, 380, 200, 280);
+    tickUntilEmbersAppear(sim);
+
+    const burst = embers(sim);
+    expect(burst.length).toBeGreaterThan(10);
+    for (const p of burst) {
+      expect(p.fireworkColor).toBe(FireworkColor.BLUE);
+      expect(inPreset(p, FireworkColor.BLUE)).toBe(true);
+    }
+  });
+
+  it("rockets in flight together each burst in the colour picked at their own launch", () => {
+    const sim = new Simulation({ width: 400, height: 800, cellSize: 4, seed: 11 });
+    sim.setFireworkColor(FireworkColor.RED);
+    sim.launchFromDrag(100, 780, 100, 380); // high
+    sim.setFireworkColor(FireworkColor.GREEN);
+    sim.launchFromDrag(300, 780, 300, 700); // lower, bursts first
+    expect(rockets(sim).length).toBe(2);
+
+    const seen = new Set<number>();
+    for (let i = 0; i < 600 && (rockets(sim).length > 0 || seen.size < 2); i++) {
+      sim.tick(1 / 60);
+      for (const p of embers(sim)) {
+        expect(inPreset(p, p.fireworkColor as FireworkColorValue)).toBe(true);
+        seen.add(p.fireworkColor);
+      }
+    }
+    expect(seen).toEqual(new Set([FireworkColor.RED, FireworkColor.GREEN]));
+  });
+
+  it("crossette sub-embers inherit their parent's colour", () => {
+    const sim = new Simulation({ width: 400, height: 400, cellSize: 4, seed: 5 });
+    sim.setFireworkPattern(FireworkPattern.CROSSETTE);
+    sim.setFireworkColor(FireworkColor.PURPLE);
+    sim.launchFromDrag(200, 380, 200, 280);
+    tickUntilEmbersAppear(sim);
+    for (let i = 0; i < 50; i++) sim.tick(1 / 60);
+
+    const subEmbers = embers(sim).filter((p) => p.behavior === EmberBehavior.NONE);
+    expect(subEmbers.length).toBeGreaterThan(0);
+    for (const p of subEmbers) {
+      expect(p.fireworkColor).toBe(FireworkColor.PURPLE);
+      expect(inPreset(p, FireworkColor.PURPLE)).toBe(true);
+    }
+  });
+
+  it("picking a colour makes the same RNG draws as gold, so motion is identical", () => {
+    const motion = (color: FireworkColorValue): number[][] => {
+      const sim = new Simulation({ width: 400, height: 400, cellSize: 4, seed: 5 });
+      sim.setFireworkPattern(FireworkPattern.CROSSETTE); // includes the sub-ember draws too
+      sim.setFireworkColor(color);
+      sim.launchFromDrag(200, 380, 200, 280);
+      tickUntilEmbersAppear(sim);
+      for (let i = 0; i < 50; i++) sim.tick(1 / 60);
+      return embers(sim).map((p) => [p.x, p.y, p.vx, p.vy, p.radius, p.lifespan]);
+    };
+    expect(motion(FireworkColor.PURPLE)).toEqual(motion(FireworkColor.GOLD));
   });
 });
 

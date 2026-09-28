@@ -24,3 +24,19 @@ export const FireworkPattern = {
   STROBE: 3,
 } as const;
 export type FireworkPatternValue = (typeof FireworkPattern)[keyof typeof FireworkPattern];
+
+/**
+ * Burst colour picked per launch. A rocket carries it in `fireworkColor` and
+ * passes it on to its embers, so rockets in flight together can burst in
+ * different colours. GOLD is 0 so a freshly reset particle defaults to the
+ * original orange/gold look.
+ */
+export const FireworkColor = {
+  GOLD: 0,
+  RED: 1,
+  GREEN: 2,
+  BLUE: 3,
+  PURPLE: 4,
+  WHITE: 5,
+} as const;
+export type FireworkColorValue = (typeof FireworkColor)[keyof typeof FireworkColor];

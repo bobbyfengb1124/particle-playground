@@ -1,6 +1,6 @@
 import { AppState, type InteractionMode } from "./AppState";
 import { createRng, deriveSeed, range, type Rng } from "../core/Rng";
-import { ParticleKind, type FireworkPatternValue } from "../core/types";
+import { ParticleKind, type FireworkColorValue, type FireworkPatternValue } from "../core/types";
 import { Grid } from "../grid/Grid";
 import { GridRenderer } from "../grid/GridRenderer";
 import { GridStepper } from "../grid/GridStepper";
@@ -226,6 +226,14 @@ export class Simulation {
     this.appState.fireworkPattern = pattern;
   }
 
+  get fireworkColor(): FireworkColorValue {
+    return this.appState.fireworkColor;
+  }
+
+  setFireworkColor(color: FireworkColorValue): void {
+    this.appState.fireworkColor = color;
+  }
+
   /**
    * Launches a rocket straight up from (x0, y0); the drag distance to
    * (x1, y1) sets how high it flies before bursting — direction is ignored,
@@ -237,7 +245,7 @@ export class Simulation {
     const power = Math.min(1, dragDistance / (this.height * FULL_POWER_DRAG_FRACTION));
     const targetHeight = this.height * (MIN_LAUNCH_HEIGHT_FRACTION + power * (MAX_LAUNCH_HEIGHT_FRACTION - MIN_LAUNCH_HEIGHT_FRACTION));
     const speed = Math.sqrt(2 * this.gravity * targetHeight);
-    launchRocket(this.particles, x0, y0, speed, this.appState.fireworkPattern);
+    launchRocket(this.particles, x0, y0, speed, this.appState.fireworkPattern, this.appState.fireworkColor);
   }
 
   tick(dt: number): void {

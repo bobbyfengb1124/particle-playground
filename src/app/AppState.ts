@@ -1,4 +1,4 @@
-import { FireworkPattern, type FireworkPatternValue } from "../core/types";
+import { FireworkColor, FireworkPattern, type FireworkColorValue, type FireworkPatternValue } from "../core/types";
 import { Material, type MaterialIdValue } from "../grid/materials";
 
 /** Which pointer-drag interaction canvas clicks currently perform. */
@@ -14,4 +14,6 @@ export class AppState {
   /** Strength (px/s^2, signed) the next drawn wind zone gets; existing zones keep whatever they were drawn with. */
   zoneStrength = 300;
   fireworkPattern: FireworkPatternValue = FireworkPattern.RING;
+  /** Colour the next launched rocket bursts in; rockets already in flight keep their own. */
+  fireworkColor: FireworkColorValue = FireworkColor.GOLD;
 }
