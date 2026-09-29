@@ -16,4 +16,6 @@ export class AppState {
   fireworkPattern: FireworkPatternValue = FireworkPattern.RING;
   /** Colour the next launched rocket bursts in; rockets already in flight keep their own. */
   fireworkColor: FireworkColorValue = FireworkColor.GOLD;
+  /** Whether render() runs the fire/ember glow pass. Drawing-only: the sim's state is identical either way. */
+  lightingEnabled = true;
 }

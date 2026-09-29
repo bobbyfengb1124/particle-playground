@@ -221,6 +221,19 @@ function createPauseButton(container: HTMLElement, sim: Simulation): void {
   });
 }
 
+/** On/off for the fire/ember glow pass — drawing-only, so it never changes what the sim does. */
+function createLightingToggle(container: HTMLElement, sim: Simulation): void {
+  const label = document.createElement("label");
+  label.id = "lighting-label";
+  const checkbox = document.createElement("input");
+  checkbox.id = "lighting-toggle";
+  checkbox.type = "checkbox";
+  checkbox.checked = sim.lightingEnabled;
+  checkbox.addEventListener("change", () => sim.setLightingEnabled(checkbox.checked));
+  label.append(checkbox, "Lighting");
+  container.appendChild(label);
+}
+
 /**
  * Wires real HTML controls into `container`, calling only Simulation's public
  * methods — never reaching into ParticleSystem/Grid directly. Keeps the UI a
@@ -262,6 +275,7 @@ export function createOverlay(container: HTMLElement, sim: Simulation): { syncBr
   createSaveButton(container, sim);
   createLoadButton(container, sim);
   createPauseButton(container, sim);
+  createLightingToggle(container, sim);
 
   return {
     // Reflects brush-size changes made via scroll/pinch, which bypass this slider's own "input" event.

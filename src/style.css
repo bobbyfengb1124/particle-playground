@@ -93,3 +93,10 @@ body {
   border-color: #e8e8e8;
   background: #2a2e35;
 }
+
+#lighting-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}

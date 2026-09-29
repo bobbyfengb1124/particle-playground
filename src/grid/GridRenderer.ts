@@ -1,3 +1,4 @@
+import { shadeCell, type LightMap } from "../lighting/LightMap";
 import type { Grid } from "./Grid";
 import { Material, MATERIALS } from "./materials";
 
@@ -15,7 +16,8 @@ export class GridRenderer {
 
   constructor(private readonly grid: Grid) {}
 
-  render(ctx: CanvasRenderingContext2D, destWidth: number, destHeight: number): void {
+  /** With a `light` map, every pixel goes through shadeCell (tinted material, halo on empty cells); without one, output is the plain material colours. */
+  render(ctx: CanvasRenderingContext2D, destWidth: number, destHeight: number, light?: LightMap): void {
     if (!this.offscreenCtx || !this.imageData) {
       this.offscreen = document.createElement("canvas");
       this.offscreen.width = this.grid.width;
@@ -28,13 +30,20 @@ export class GridRenderer {
 
     const { material } = this.grid;
     const data = this.imageData.data;
-    for (let i = 0; i < material.length; i++) {
-      const info = MATERIALS[material[i]];
-      const o = i * 4;
-      data[o] = info.color[0];
-      data[o + 1] = info.color[1];
-      data[o + 2] = info.color[2];
-      data[o + 3] = material[i] === Material.EMPTY ? 0 : 255;
+    if (light) {
+      const { r, g, b } = light;
+      for (let i = 0; i < material.length; i++) {
+        shadeCell(data, i * 4, MATERIALS[material[i]].color, r[i], g[i], b[i], material[i] === Material.EMPTY);
+      }
+    } else {
+      for (let i = 0; i < material.length; i++) {
+        const info = MATERIALS[material[i]];
+        const o = i * 4;
+        data[o] = info.color[0];
+        data[o + 1] = info.color[1];
+        data[o + 2] = info.color[2];
+        data[o + 3] = material[i] === Material.EMPTY ? 0 : 255;
+      }
     }
     this.offscreenCtx.putImageData(this.imageData, 0, 0);
 

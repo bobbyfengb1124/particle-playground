@@ -6,6 +6,7 @@ import { GridRenderer } from "../grid/GridRenderer";
 import { GridStepper } from "../grid/GridStepper";
 import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
 import { applyScene, parseScene, serializeScene } from "../grid/scene";
+import { LightMap } from "../lighting/LightMap";
 import type { Bounds } from "../particles/collisions";
 import { launchRocket, updateFireworkBehaviors } from "../particles/fireworks";
 import type { Particle } from "../particles/Particle";
@@ -52,6 +53,9 @@ export class Simulation {
   private paused = false;
   private hoverPoint: { x: number; y: number } | null = null;
   private readonly windField: WindField;
+  private readonly lightMap: LightMap;
+  /** Drives the glow flicker. Counts unpaused ticks (not frames) so a paused scene is a still image; never feeds back into sim state. */
+  private lightTickCount = 0;
   private zones: WindZone[] = [];
   /** The in-progress wind-zone drag (canvas pixels), drawn as a dashed preview until pointerup. */
   private zoneDraft: { x0: number; y0: number; x1: number; y1: number } | null = null;
@@ -75,6 +79,7 @@ export class Simulation {
     this.grid = new Grid(gridWidth, gridHeight);
     this.gridRenderer = new GridRenderer(this.grid);
     this.windField = new WindField(gridWidth, gridHeight, this.cellSize);
+    this.lightMap = new LightMap(gridWidth, gridHeight);
   }
 
   spawnParticlesAt(x: number, y: number, count = 1): void {
@@ -210,6 +215,18 @@ export class Simulation {
     return null;
   }
 
+  get lightingEnabled(): boolean {
+    return this.appState.lightingEnabled;
+  }
+
+  setLightingEnabled(on: boolean): void {
+    this.appState.lightingEnabled = on;
+  }
+
+  get lightTick(): number {
+    return this.lightTickCount;
+  }
+
   get mode(): InteractionMode {
     return this.appState.mode;
   }
@@ -250,6 +267,7 @@ export class Simulation {
 
   tick(dt: number): void {
     if (this.paused) return;
+    this.lightTickCount++;
     this.particles.update(dt, {
       gravity: this.gravity,
       wind: this.appState.wind,
@@ -291,7 +309,12 @@ export class Simulation {
 
   render(ctx: CanvasRenderingContext2D): void {
     ctx.clearRect(0, 0, this.width, this.height);
-    this.gridRenderer.render(ctx, this.width, this.height);
+    if (this.appState.lightingEnabled) {
+      this.lightMap.build(this.grid, this.particles, this.cellSize, this.lightTickCount);
+      this.gridRenderer.render(ctx, this.width, this.height, this.lightMap);
+    } else {
+      this.gridRenderer.render(ctx, this.width, this.height);
+    }
     this.renderWindZones(ctx);
     renderParticles(ctx, this.particles);
     if (this.appState.mode === "paint" && this.hoverPoint) this.renderBrushOutline(ctx, this.hoverPoint);

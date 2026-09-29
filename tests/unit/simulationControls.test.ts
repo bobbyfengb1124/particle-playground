@@ -145,4 +145,25 @@ describe("Simulation controls", () => {
     expect(afterResumeY).not.toBe(firstParticleY);
     expect(sim.grid.get(5, 0)).toBe(Material.EMPTY);
   });
+
+  it("lighting defaults to on and the toggle round-trips", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    expect(sim.lightingEnabled).toBe(true);
+    sim.setLightingEnabled(false);
+    expect(sim.lightingEnabled).toBe(false);
+    sim.setLightingEnabled(true);
+    expect(sim.lightingEnabled).toBe(true);
+  });
+
+  it("the flicker clock advances once per tick and freezes while paused", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    runTicks(sim, 10);
+    expect(sim.lightTick).toBe(10);
+    sim.pause();
+    runTicks(sim, 10);
+    expect(sim.lightTick).toBe(10);
+    sim.resume();
+    runTicks(sim, 5);
+    expect(sim.lightTick).toBe(15);
+  });
 });

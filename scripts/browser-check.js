@@ -48,7 +48,7 @@ async function shot(page, name) {
 
   // Step 8 — readout: appears top-right, formatted as expected, particle
   // count reacts to the sim (checked again mid-firework below).
-  const readoutPattern = /^FPS: \d+ \| Particles: \d+ \| Active cells: \d+$/;
+  const readoutPattern = /^FPS: \d+ \| Particles: \d+ \| Active cells: \d+ \| Brush: \d+$/;
   await page.waitForFunction(
     (pattern) => {
       const el = document.querySelector("#readout");
@@ -254,6 +254,42 @@ async function shot(page, name) {
   await launch(0);
   await page.waitForTimeout(2000);
   await shot(page, "firework-low-burst-over-stone-no-ignition");
+
+  // Step 16 — lighting: a paused fire block should cast a halo into the empty
+  // air beside it with Lighting on, and leave that air transparent with it off.
+  // Paused so the fire can't burn out (or smoke drift) between the samples.
+  await page.click("button:has-text('Clear')");
+  await page.click("button:has-text('Pause')");
+  await page.click("#palette button:has-text('fire')");
+  await page.fill("#brush-slider", "3");
+  await page.dispatchEvent("#brush-slider", "input");
+  const fireX = box.width / 2;
+  const fireY = box.height / 2;
+  await page.mouse.move(box.x + fireX, box.y + fireY);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.mouse.move(box.x + 10, box.y + 10); // keep the brush outline away from the sampled pixel
+
+  async function haloPixel() {
+    await page.waitForTimeout(100); // a few frames so render() picks up the change
+    // 6 cells left of center = 3 cells past the block's left edge, inside the glow's reach.
+    return page.evaluate(
+      ([x, y]) => Array.from(document.querySelector("#scene").getContext("2d").getImageData(x, y, 1, 1).data),
+      [fireX - 24, fireY],
+    );
+  }
+
+  const litPixel = await haloPixel();
+  await shot(page, "lighting-on-fire-halo");
+  await page.uncheck("#lighting-toggle");
+  const unlitPixel = await haloPixel();
+  await shot(page, "lighting-off-no-halo");
+  console.log("halo pixel lit:", JSON.stringify(litPixel), "-> glows:", litPixel[3] > 0 && litPixel[0] > litPixel[2]);
+  console.log("halo pixel unlit:", JSON.stringify(unlitPixel), "-> transparent:", unlitPixel[3] === 0);
+  if (!(litPixel[3] > 0 && litPixel[0] > litPixel[2])) errors.push("lighting: no warm halo beside fire");
+  if (unlitPixel[3] !== 0) errors.push("lighting: halo still drawn with Lighting off");
+  await page.check("#lighting-toggle");
+  await page.click("button:has-text('Resume')");
 
   // Clear grid.
   await page.click("button:has-text('Clear')");
