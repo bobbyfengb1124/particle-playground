@@ -24,7 +24,8 @@ const LIT_GAIN = 0.6;
 const HALO_GAIN = 0.8;
 export const HALO_MAX_ALPHA = 140;
 
-function hash01(a: number, b: number): number {
+/** Same (a, b) always gives the same random-looking float in [0, 1) — a stateless lookup, unlike Rng's stream. */
+function hashToUnit(a: number, b: number): number {
   let h = Math.imul(a, 0x27d4eb2d) ^ Math.imul(b, 0x165667b1);
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
@@ -37,11 +38,11 @@ function hash01(a: number, b: number): number {
  * than strobes. A pure hash, never the sim RNG, so it can't perturb snapshots.
  */
 export function flicker(idx: number, frame: number): number {
-  const k = Math.floor(frame / FLICKER_PERIOD_FRAMES);
-  const t = (frame - k * FLICKER_PERIOD_FRAMES) / FLICKER_PERIOD_FRAMES;
-  const s = t * t * (3 - 2 * t);
-  const n = hash01(idx, k) * (1 - s) + hash01(idx, k + 1) * s;
-  return FLICKER_MIN + n * (FLICKER_MAX - FLICKER_MIN);
+  const keyframe = Math.floor(frame / FLICKER_PERIOD_FRAMES);
+  const progress = (frame - keyframe * FLICKER_PERIOD_FRAMES) / FLICKER_PERIOD_FRAMES;
+  const eased = progress * progress * (3 - 2 * progress); // smoothstep: flat at both ends, so no kink at keyframes
+  const noise = hashToUnit(idx, keyframe) * (1 - eased) + hashToUnit(idx, keyframe + 1) * eased;
+  return FLICKER_MIN + noise * (FLICKER_MAX - FLICKER_MIN);
 }
 
 /**
@@ -107,10 +108,10 @@ export class LightMap {
     const { material } = grid;
     for (let i = 0; i < material.length; i++) {
       if (material[i] !== Material.FIRE) continue;
-      const k = FIRE_INTENSITY * flicker(i, frame);
-      this.r[i] += FIRE_LIGHT[0] * k;
-      this.g[i] += FIRE_LIGHT[1] * k;
-      this.b[i] += FIRE_LIGHT[2] * k;
+      const intensity = FIRE_INTENSITY * flicker(i, frame);
+      this.r[i] += FIRE_LIGHT[0] * intensity;
+      this.g[i] += FIRE_LIGHT[1] * intensity;
+      this.b[i] += FIRE_LIGHT[2] * intensity;
     }
 
     particles.forEachActive((p) => {
@@ -121,11 +122,11 @@ export class LightMap {
       const gy = Math.floor(p.y / cellSize);
       if (gx < 0 || gy < 0 || gx >= this.width || gy >= this.height) return;
       const lifeRatio = p.lifespan > 0 ? p.age / p.lifespan : 1;
-      const k = PARTICLE_INTENSITY * Math.max(0, 1 - lifeRatio);
+      const intensity = PARTICLE_INTENSITY * Math.max(0, 1 - lifeRatio);
       const i = gy * this.width + gx;
-      this.r[i] += p.colorR * k;
-      this.g[i] += p.colorG * k;
-      this.b[i] += p.colorB * k;
+      this.r[i] += p.colorR * intensity;
+      this.g[i] += p.colorG * intensity;
+      this.b[i] += p.colorB * intensity;
     });
 
     for (let pass = 0; pass < BLUR_PASSES; pass++) {
