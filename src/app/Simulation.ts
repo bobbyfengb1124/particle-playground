@@ -1,21 +1,14 @@
 import { AppState, type InteractionMode } from "./AppState";
-import { createRng, deriveSeed, range, type Rng } from "../core/Rng";
-import { ParticleKind, type FireworkColorValue, type FireworkPatternValue } from "../core/types";
-import { Grid } from "../grid/Grid";
-import { GridRenderer } from "../grid/GridRenderer";
-import { GridStepper } from "../grid/GridStepper";
-import { Material, MATERIALS, type MaterialIdValue } from "../grid/materials";
-import { applyScene, parseScene, serializeScene } from "../grid/scene";
-import { LightMap } from "../lighting/LightMap";
-import type { Bounds } from "../particles/collisions";
-import { launchRocket, updateFireworkBehaviors } from "../particles/fireworks";
-import type { Particle } from "../particles/Particle";
-import { renderParticles } from "../particles/ParticleRenderer";
-import { ParticleSystem } from "../particles/ParticleSystem";
-import { MAX_WIND_ZONES, normalizeZoneRect, WindField, ZONE_WIND_MAX, type WindZone } from "../wind/WindField";
+import { CpuBackend } from "../backend/cpu/CpuBackend";
+import type { SimBackend } from "../backend/SimBackend";
+import type { FireworkColorValue, FireworkPatternValue } from "../core/types";
+import type { Grid } from "../grid/Grid";
+import type { MaterialIdValue } from "../grid/materials";
+import { parseScene, REFERENCE_CELL_SIZE } from "../grid/scene";
+import type { ParticleSystem } from "../particles/ParticleSystem";
+import { MAX_WIND_ZONES, normalizeZoneRect, ZONE_WIND_MAX, type WindZone } from "../wind/WindField";
 
 const DEFAULT_GRAVITY = 1400; // px/s^2 — tuned for a snappy arcade feel at this canvas scale
-const DEFAULT_DRAG_COEF = 0.8; // 1/s — applied to every click-spawned particle
 const DEFAULT_CELL_SIZE = 4; // px per grid cell
 export const MAX_BRUSH_SIZE = 8; // cells — shared clamp for the slider, scroll-wheel, and pinch input paths
 
@@ -35,67 +28,55 @@ export interface SimulationOptions {
   cellSize?: number;
 }
 
-/** Orchestrator: owns the particle engine (and, from Step 3 on, the material grid) behind a wall-clock-agnostic tick(dt)/render(ctx) pair. */
+/** Orchestrator: owns the UI state (AppState, wind zones, hover/draft overlays) and drives a SimBackend behind a wall-clock-agnostic tick(dt)/render(ctx) pair. */
 export class Simulation {
   readonly width: number;
   readonly height: number;
   readonly cellSize: number;
-  readonly particles: ParticleSystem;
-  readonly grid: Grid;
+  readonly backend: SimBackend;
 
-  private readonly particleRng: Rng;
-  private readonly gridRng: Rng;
-  private readonly gridStepper = new GridStepper();
-  private readonly gridRenderer: GridRenderer;
   private readonly appState = new AppState();
-  private readonly bounds: Bounds;
   private readonly gravity: number;
   private paused = false;
   private hoverPoint: { x: number; y: number } | null = null;
-  private readonly windField: WindField;
-  private readonly lightMap: LightMap;
   /** Drives the glow flicker. Counts unpaused ticks (not frames) so a paused scene is a still image; never feeds back into sim state. */
   private lightTickCount = 0;
   private zones: WindZone[] = [];
   /** The in-progress wind-zone drag (canvas pixels), drawn as a dashed preview until pointerup. */
   private zoneDraft: { x0: number; y0: number; x1: number; y1: number } | null = null;
-  // One-line lever for Step 8 (or earlier) to run the CA slower than particle
-  // physics; at 1 the grid steps every tick, same as particles.
-  private readonly gridTicksPerSimTick = 1;
-  private gridTickCounter = 0;
 
   constructor(opts: SimulationOptions) {
     this.width = opts.width;
     this.height = opts.height;
-    this.bounds = { width: this.width, height: this.height };
     this.gravity = opts.gravity ?? DEFAULT_GRAVITY;
-    this.cellSize = opts.cellSize ?? DEFAULT_CELL_SIZE;
-    const seed = opts.seed ?? 1;
-    this.particleRng = createRng(deriveSeed(seed, 1));
-    this.gridRng = createRng(deriveSeed(seed, 2));
-    this.particles = new ParticleSystem(opts.particleCapacity ?? 4000);
-    const gridWidth = Math.max(1, Math.floor(this.width / this.cellSize));
-    const gridHeight = Math.max(1, Math.floor(this.height / this.cellSize));
-    this.grid = new Grid(gridWidth, gridHeight);
-    this.gridRenderer = new GridRenderer(this.grid);
-    this.windField = new WindField(gridWidth, gridHeight, this.cellSize);
-    this.lightMap = new LightMap(gridWidth, gridHeight);
+    this.backend = new CpuBackend({
+      width: this.width,
+      height: this.height,
+      cellSize: opts.cellSize ?? DEFAULT_CELL_SIZE,
+      seed: opts.seed ?? 1,
+      particleCapacity: opts.particleCapacity ?? 4000,
+      gravity: this.gravity,
+    });
+    this.cellSize = this.backend.cellSize;
+  }
+
+  /** The CPU backend's grid — for tests and debugging; there's no CPU-side grid on other backends. */
+  get grid(): Grid {
+    return this.cpuBackend().grid;
+  }
+
+  /** The CPU backend's particle pool — same caveat as `grid`. */
+  get particles(): ParticleSystem {
+    return this.cpuBackend().particles;
+  }
+
+  private cpuBackend(): CpuBackend {
+    if (!(this.backend instanceof CpuBackend)) throw new Error(`grid/particles are only reachable on the CPU backend (this is "${this.backend.kind}")`);
+    return this.backend;
   }
 
   spawnParticlesAt(x: number, y: number, count = 1): void {
-    for (let i = 0; i < count; i++) {
-      const angle = range(this.particleRng, 0, Math.PI * 2);
-      const speed = range(this.particleRng, 10, 60);
-      this.particles.spawn({
-        x,
-        y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        radius: range(this.particleRng, 1.5, 3.5),
-        lifespan: range(this.particleRng, 1, 2),
-        dragCoef: DEFAULT_DRAG_COEF,
-      });
-    }
+    this.backend.spawnParticlesAt(x, y, count);
   }
 
   get wind(): number {
@@ -138,12 +119,11 @@ export class Simulation {
     this.hoverPoint = null;
   }
 
-  /** Paints (or erases, if the selected material is EMPTY) a square brush centered on a canvas pixel position. */
+  /** Paints (or erases, if the selected material is EMPTY) a square brush centered on a canvas pixel position, snapped to the REFERENCE_CELL_SIZE brush lattice. */
   paintAt(x: number, y: number): void {
-    const gx = Math.floor(x / this.cellSize);
-    const gy = Math.floor(y / this.cellSize);
-    const material = this.appState.selectedMaterial;
-    this.grid.forEachInSquare(gx, gy, this.appState.brushSize, (cx, cy) => this.grid.setMaterial(cx, cy, material));
+    const bx = Math.floor(x / REFERENCE_CELL_SIZE);
+    const by = Math.floor(y / REFERENCE_CELL_SIZE);
+    this.backend.paintBrush(bx, by, this.appState.brushSize, this.appState.selectedMaterial);
   }
 
   /**
@@ -153,7 +133,7 @@ export class Simulation {
    */
   paintStroke(x0: number, y0: number, x1: number, y1: number): void {
     const dist = Math.hypot(x1 - x0, y1 - y0);
-    const steps = Math.max(1, Math.ceil(dist / (this.cellSize / 2)));
+    const steps = Math.max(1, Math.ceil(dist / (REFERENCE_CELL_SIZE / 2)));
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       this.paintAt(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
@@ -161,7 +141,7 @@ export class Simulation {
   }
 
   clearGrid(): void {
-    this.grid.clear();
+    this.backend.clearGrid();
   }
 
   get windZones(): readonly WindZone[] {
@@ -179,17 +159,17 @@ export class Simulation {
   /** Turns a finished drag into a zone at the current strength; returns false when ignored (cap reached, a plain click, or zero strength). */
   addWindZoneFromDrag(x0: number, y0: number, x1: number, y1: number): boolean {
     if (this.zones.length >= MAX_WIND_ZONES) return false;
-    const zone = normalizeZoneRect(x0, y0, x1, y1, this.cellSize, this.grid.width, this.grid.height, this.appState.zoneStrength);
+    const zone = normalizeZoneRect(x0, y0, x1, y1, this.cellSize, this.backend.gridWidth, this.backend.gridHeight, this.appState.zoneStrength);
     if (!zone) return false;
     this.zones.push(zone);
-    this.windField.rebuild(this.zones);
+    this.backend.setWindZones(this.zones);
     return true;
   }
 
   /** Removes every wind zone — independent of clearGrid, which leaves zones in place. */
   clearWindZones(): void {
     this.zones = [];
-    this.windField.rebuild(this.zones);
+    this.backend.setWindZones(this.zones);
   }
 
   setZoneDraft(x0: number, y0: number, x1: number, y1: number): void {
@@ -200,18 +180,19 @@ export class Simulation {
     this.zoneDraft = null;
   }
 
-  /** Serializes the grid's material+timer state and the wind zones to a JSON string. */
-  exportScene(): string {
-    return JSON.stringify(serializeScene(this.grid, this.zones));
+  /** Serializes the grid's material+timer state and the wind zones to a JSON string. Async because a GPU backend reads its cells back from the device. */
+  async exportScene(): Promise<string> {
+    const cells = await this.backend.exportCells();
+    return JSON.stringify({ ...cells, windZones: this.zones.map((z) => ({ ...z })) });
   }
 
   /** Validates and loads a saved scene; returns null on success, or an error message on failure (grid and zones are left untouched on failure). A file with no zones clears the current ones — a load replaces the whole scene. */
   loadScene(json: string): string | null {
-    const result = parseScene(json, this.grid.width, this.grid.height);
+    const result = parseScene(json, this.backend.gridWidth, this.backend.gridHeight, this.cellSize);
     if (!result.ok) return result.error;
-    applyScene(this.grid, result.scene);
+    this.backend.applyScene(result.scene);
     this.zones = result.scene.windZones ?? [];
-    this.windField.rebuild(this.zones);
+    this.backend.setWindZones(this.zones);
     return null;
   }
 
@@ -262,61 +243,23 @@ export class Simulation {
     const power = Math.min(1, dragDistance / (this.height * FULL_POWER_DRAG_FRACTION));
     const targetHeight = this.height * (MIN_LAUNCH_HEIGHT_FRACTION + power * (MAX_LAUNCH_HEIGHT_FRACTION - MIN_LAUNCH_HEIGHT_FRACTION));
     const speed = Math.sqrt(2 * this.gravity * targetHeight);
-    launchRocket(this.particles, x0, y0, speed, this.appState.fireworkPattern, this.appState.fireworkColor);
+    this.backend.launchRocket(x0, y0, speed, this.appState.fireworkPattern, this.appState.fireworkColor);
   }
 
   tick(dt: number): void {
     if (this.paused) return;
     this.lightTickCount++;
-    this.particles.update(dt, {
-      gravity: this.gravity,
-      wind: this.appState.wind,
-      windField: this.windField,
-      bounds: this.bounds,
-    });
-    updateFireworkBehaviors(this.particles, dt, this.particleRng);
-    this.igniteEmbersOnLanding();
-    this.gridTickCounter++;
-    if (this.gridTickCounter % this.gridTicksPerSimTick === 0) {
-      this.gridStepper.step(this.grid, this.gridRng, this.windField.values, this.appState.wind);
-    }
-  }
-
-  /** A falling ember that reaches a non-empty grid cell is consumed — igniting the cell if it's flammable, just settling into it otherwise. */
-  private igniteEmbersOnLanding(): void {
-    const landed: Particle[] = [];
-    this.particles.forEachActive((p) => {
-      if (p.kind !== ParticleKind.EMBER) return;
-      const gx = Math.floor(p.x / this.cellSize);
-      const gy = Math.floor(p.y / this.cellSize);
-      if (!this.grid.inBounds(gx, gy)) return;
-      const cellId = this.grid.get(gx, gy);
-      if (cellId === Material.EMPTY) return;
-      if (MATERIALS[cellId].flammable) this.grid.transformMaterial(gx, gy, Material.FIRE, 0);
-      landed.push(p);
-    });
-    for (const p of landed) this.particles.release(p);
+    this.backend.tick(dt, this.appState.wind);
   }
 
   /** Read-only snapshot for the on-screen readout — FPS is deliberately not here, since tick(dt) never reads the wall clock by design. */
   getStats(): { particleCount: number; activeCellCount: number; brushSize: number } {
-    return {
-      particleCount: this.particles.activeCount,
-      activeCellCount: this.grid.activeCount,
-      brushSize: this.appState.brushSize,
-    };
+    return { ...this.backend.getStats(), brushSize: this.appState.brushSize };
   }
 
   render(ctx: CanvasRenderingContext2D): void {
-    ctx.clearRect(0, 0, this.width, this.height);
-    if (this.appState.lightingEnabled) {
-      this.lightMap.build(this.grid, this.particles, this.cellSize, this.lightTickCount);
-      this.gridRenderer.render(ctx, this.width, this.height, this.lightMap);
-    } else {
-      this.gridRenderer.render(ctx, this.width, this.height);
-    }
+    this.backend.renderScene(ctx, this.appState.lightingEnabled, this.lightTickCount);
     this.renderWindZones(ctx);
-    renderParticles(ctx, this.particles);
     if (this.appState.mode === "paint" && this.hoverPoint) this.renderBrushOutline(ctx, this.hoverPoint);
     if (this.appState.mode === "wind-zone" && this.zoneDraft) this.renderZoneDraft(ctx, this.zoneDraft);
   }
@@ -351,7 +294,7 @@ export class Simulation {
 
   /** Dashed preview of the zone being dragged, snapped to the same cells the finished zone will cover. */
   private renderZoneDraft(ctx: CanvasRenderingContext2D, d: { x0: number; y0: number; x1: number; y1: number }): void {
-    const zone = normalizeZoneRect(d.x0, d.y0, d.x1, d.y1, this.cellSize, this.grid.width, this.grid.height, 1);
+    const zone = normalizeZoneRect(d.x0, d.y0, d.x1, d.y1, this.cellSize, this.backend.gridWidth, this.backend.gridHeight, 1);
     if (!zone) return;
     ctx.save();
     ctx.setLineDash([4, 4]);
@@ -363,12 +306,12 @@ export class Simulation {
 
   /** Outlines the brush's actual square footprint (not a circle — the brush itself is square) centered on the hovered cell. */
   private renderBrushOutline(ctx: CanvasRenderingContext2D, point: { x: number; y: number }): void {
-    const gx = Math.floor(point.x / this.cellSize);
-    const gy = Math.floor(point.y / this.cellSize);
+    const bx = Math.floor(point.x / REFERENCE_CELL_SIZE);
+    const by = Math.floor(point.y / REFERENCE_CELL_SIZE);
     const size = this.appState.brushSize;
-    const side = (2 * size + 1) * this.cellSize;
-    const left = (gx - size) * this.cellSize;
-    const top = (gy - size) * this.cellSize;
+    const side = (2 * size + 1) * REFERENCE_CELL_SIZE;
+    const left = (bx - size) * REFERENCE_CELL_SIZE;
+    const top = (by - size) * REFERENCE_CELL_SIZE;
     ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
     ctx.lineWidth = 1;
     ctx.strokeRect(left + 0.5, top + 0.5, side - 1, side - 1);

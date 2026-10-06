@@ -4,9 +4,9 @@ import { Material } from "../../src/grid/materials";
 import { runTicks } from "../snapshot/helpers/headlessRunner";
 
 describe("Simulation.exportScene", () => {
-  it("uses the grid's cell dimensions, not the canvas pixel dimensions", () => {
+  it("uses the grid's cell dimensions, not the canvas pixel dimensions", async () => {
     const sim = new Simulation({ width: 400, height: 200, cellSize: 4 });
-    const scene = JSON.parse(sim.exportScene());
+    const scene = JSON.parse(await sim.exportScene());
     expect(scene.width).toBe(sim.grid.width);
     expect(scene.height).toBe(sim.grid.height);
     expect(scene.width).not.toBe(sim.width);
@@ -15,7 +15,7 @@ describe("Simulation.exportScene", () => {
 });
 
 describe("Simulation save/load round trip", () => {
-  it("restores a painted-and-ticked scene exactly after clearing", () => {
+  it("restores a painted-and-ticked scene exactly after clearing", async () => {
     const sim = new Simulation({ width: 80, height: 80, cellSize: 4, seed: 5 });
     sim.grid.setMaterial(2, 2, Material.STONE);
     sim.grid.setMaterial(5, 5, Material.WOOD);
@@ -26,7 +26,7 @@ describe("Simulation save/load round trip", () => {
     const beforeMaterial = Array.from(sim.grid.material);
     const beforeTimer = Array.from(sim.grid.timer);
 
-    const json = sim.exportScene();
+    const json = await sim.exportScene();
     sim.clearGrid();
     expect(Array.from(sim.grid.material).every((id) => id === Material.EMPTY)).toBe(true);
 
@@ -49,22 +49,22 @@ describe("Simulation save/load round trip", () => {
     expect(Array.from(sim.grid.timer)).toEqual(beforeTimer);
   });
 
-  it("restores wind zones after they were cleared", () => {
+  it("restores wind zones after they were cleared", async () => {
     const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
     sim.addWindZoneFromDrag(0, 0, 20, 20);
     sim.setZoneStrength(-600);
     sim.addWindZoneFromDrag(10, 10, 30, 30);
     const before = sim.windZones.map((z) => ({ ...z }));
 
-    const json = sim.exportScene();
+    const json = await sim.exportScene();
     sim.clearWindZones();
     expect(sim.loadScene(json)).toBeNull();
     expect(sim.windZones).toEqual(before);
   });
 
-  it("loading an older file with no windZones field clears the current zones", () => {
+  it("loading an older file with no windZones field clears the current zones", async () => {
     const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
-    const oldFile = JSON.parse(sim.exportScene());
+    const oldFile = JSON.parse(await sim.exportScene());
     delete oldFile.windZones;
     sim.addWindZoneFromDrag(0, 0, 20, 20);
 
@@ -72,9 +72,9 @@ describe("Simulation save/load round trip", () => {
     expect(sim.windZones.length).toBe(0);
   });
 
-  it("leaves the grid and zones untouched when the wind zone data is invalid", () => {
+  it("leaves the grid and zones untouched when the wind zone data is invalid", async () => {
     const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
-    const bad = JSON.parse(sim.exportScene());
+    const bad = JSON.parse(await sim.exportScene());
     bad.windZones = [{ gx: 0, gy: 0, gw: 1, gh: 1, strength: 9999 }];
     bad.material[0] = Material.STONE;
     sim.grid.setMaterial(1, 1, Material.SAND);
@@ -87,14 +87,14 @@ describe("Simulation save/load round trip", () => {
     expect(sim.windZones).toEqual(beforeZones);
   });
 
-  it("leaves the grid untouched when loading a scene with mismatched dimensions", () => {
+  it("leaves the grid untouched when loading a scene with mismatched dimensions", async () => {
     const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
     sim.grid.setMaterial(1, 1, Material.SAND);
     const beforeMaterial = Array.from(sim.grid.material);
     const beforeTimer = Array.from(sim.grid.timer);
 
     const other = new Simulation({ width: 80, height: 80, cellSize: 4 });
-    const error = sim.loadScene(other.exportScene());
+    const error = sim.loadScene(await other.exportScene());
 
     expect(error).not.toBeNull();
     expect(Array.from(sim.grid.material)).toEqual(beforeMaterial);

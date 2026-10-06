@@ -1,7 +1,7 @@
 import { Material, MATERIALS } from "../materials";
 import type { RuleFn } from "./types";
 
-const FIRE_LIFETIME_TICKS = 180; // ~3s at 60Hz — burns out on its own regardless of remaining fuel
+export const FIRE_LIFETIME_TICKS = 180; // ~3s at 60Hz — burns out on its own regardless of remaining fuel (×tickScale on finer grids)
 
 const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [-1, -1], [0, -1], [1, -1],
@@ -22,9 +22,9 @@ const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
  * empty-cell requirement naturally rate-limits it to one rising smoke cell
  * per column at a time, rather than needing a separate spawn probability.
  */
-export const stepFire: RuleFn = (grid, x, y, _ctx) => {
+export const stepFire: RuleFn = (grid, x, y, ctx) => {
   const age = grid.incrementTimer(x, y);
-  if (age >= FIRE_LIFETIME_TICKS) {
+  if (age >= FIRE_LIFETIME_TICKS * (ctx.tickScale ?? 1)) {
     grid.transformMaterial(x, y, Material.EMPTY);
     return;
   }

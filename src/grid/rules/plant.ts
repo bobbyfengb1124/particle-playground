@@ -7,8 +7,12 @@ const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [-1, 1], [0, 1], [1, 1],
 ];
 
-const WATERED_TICKS_PER_STAGE = 90;
-const MAX_STAGE = 6;
+// Not scaled on finer grids: tickScale more ticks per sim tick ÷ cellRatio
+// more stages to climb the same height cancel out (they're always equal),
+// so total growth time stays the same and the counter never passes 255.
+export const WATERED_TICKS_PER_STAGE = 90;
+/** Stage cap on the reference 4 px grid; ×cellRatio on finer grids so a full plant is the same height on screen. */
+export const MAX_STAGE = 6;
 
 function isLiquid(id: number): boolean {
   return id === Material.WATER || id === Material.OIL;
@@ -96,7 +100,7 @@ export const stepSeed: RuleFn = (grid, x, y, ctx) => {
     grid.transformMaterial(waterX, waterY, Material.EMPTY);
     grid.transformMaterial(x, y, Material.PLANT);
     const nextStage = stage + 1;
-    if (nextStage >= MAX_STAGE) {
+    if (nextStage >= MAX_STAGE * (ctx.cellRatio ?? 1)) {
       grid.transformMaterial(tx, ty, Material.PLANT);
     } else {
       grid.transformMaterial(tx, ty, Material.SEED, nextStage << 8);

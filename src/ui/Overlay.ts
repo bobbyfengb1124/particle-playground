@@ -182,8 +182,8 @@ function createClearZonesButton(container: HTMLElement, sim: Simulation): void {
 }
 
 function createSaveButton(container: HTMLElement, sim: Simulation): void {
-  createButton(container, "Save", () => {
-    const json = sim.exportScene();
+  createButton(container, "Save", async () => {
+    const json = await sim.exportScene();
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

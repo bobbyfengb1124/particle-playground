@@ -15,10 +15,15 @@ export class GridStepper {
   enableActiveSkip = true;
   private tickCount = 0;
 
-  /** `wind`/`globalWind` only affect gas; with both omitted (or zero) a tick is identical to one before wind existed. */
-  step(grid: Grid, rng: Rng, wind?: Float32Array, globalWind = 0): void {
+  /**
+   * `wind`/`globalWind` only affect gas; with both omitted (or zero) a tick is
+   * identical to one before wind existed. `scale` is 4 / cellSize, passed to
+   * the rules as both tickScale and cellRatio — the caller runs `scale` of
+   * these per sim tick on a finer grid. At 1 (the default) nothing changes.
+   */
+  step(grid: Grid, rng: Rng, wind?: Float32Array, globalWind = 0, scale = 1): void {
     grid.beginTick();
-    const ctx: RuleContext = { rng, wind, globalWind };
+    const ctx: RuleContext = { rng, wind, globalWind, tickScale: scale, cellRatio: scale };
     const leftToRight = this.tickCount % 2 === 0;
     for (let y = grid.height - 1; y >= 0; y--) {
       for (let i = 0; i < grid.width; i++) {

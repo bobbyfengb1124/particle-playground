@@ -1,0 +1,20 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`phased stepper (the GPU's schedule) > a mixed scene after 200 ticks — pinned, since the GPU backend must reproduce this exactly 1`] = `
+"mwmmmmmmmwwmmwmmmmmmmmmm
+mmwmmmwmmmmwmmmmmmmmmmmm
+mmmmmmmwwmmmwmwmmmmmmmmm
+mmmmmmmmmmwwmmmmmmmmmmmm
+mmmmmmmmmmmmmmmmwmmmmmmm
+mmmmmmmmmmmmmmmmmmmmmmmm
+mmmmmmmmmwmmmmmmmmmmmmmm
+mmmmmmmmmmmmmmmmmmmmmmmm
+mmmmmmmmmmmmmmmmmmmmmmmm
+mmmmmmmmmmmmmmmmmmmmmmmm
+mmmmmmmmmmmmmmmmmmmmmmmm
+mmmmmmmmmmmmmmmmmmmmmmmm
+..sssmmmmmmmmmmmmmmmmmmm
+sssssss..ffmmfffmmmm...m
+ssssssssss.ff.fff.......
+########################"
+`;
