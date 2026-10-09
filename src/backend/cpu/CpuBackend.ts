@@ -23,6 +23,7 @@ export interface CpuBackendOptions {
   seed: number;
   particleCapacity: number;
   gravity: number;
+  canvas?: HTMLCanvasElement; // the #scene canvas; optional so headless tests can skip rendering
 }
 
 /** The reference engine: the sequential GridStepper, the pooled ParticleSystem, and Canvas 2D rendering. */
@@ -45,6 +46,8 @@ export class CpuBackend implements SimBackend {
   private readonly gridRenderer: GridRenderer;
   private readonly windField: WindField;
   private readonly lightMap: LightMap;
+  private readonly canvas: HTMLCanvasElement | undefined;
+  private ctx: CanvasRenderingContext2D | null = null;
 
   constructor(opts: CpuBackendOptions) {
     this.width = opts.width;
@@ -62,6 +65,7 @@ export class CpuBackend implements SimBackend {
     this.gridRenderer = new GridRenderer(this.grid);
     this.windField = new WindField(this.gridWidth, this.gridHeight, this.cellSize);
     this.lightMap = new LightMap(this.gridWidth, this.gridHeight);
+    this.canvas = opts.canvas;
   }
 
   tick(dt: number, globalWind: number): void {
@@ -131,7 +135,8 @@ export class CpuBackend implements SimBackend {
     this.windField.rebuild(zones);
   }
 
-  renderScene(ctx: CanvasRenderingContext2D, lighting: boolean, frame: number): void {
+  renderScene(lighting: boolean, frame: number): void {
+    const ctx = this.sceneContext();
     ctx.clearRect(0, 0, this.width, this.height);
     if (lighting) {
       this.lightMap.build(this.grid, this.particles, this.cellSize, frame);
@@ -140,6 +145,16 @@ export class CpuBackend implements SimBackend {
       this.gridRenderer.render(ctx, this.width, this.height);
     }
     renderParticles(ctx, this.particles);
+  }
+
+  /** Created on first render rather than in the constructor, so Node tests that never render need no canvas. */
+  private sceneContext(): CanvasRenderingContext2D {
+    if (this.ctx) return this.ctx;
+    if (!this.canvas) throw new Error("CpuBackend was built without a canvas, so it can't render");
+    const ctx = this.canvas.getContext("2d");
+    if (!ctx) throw new Error("2d context unavailable");
+    this.ctx = ctx;
+    return ctx;
   }
 
   getStats(): BackendStats {

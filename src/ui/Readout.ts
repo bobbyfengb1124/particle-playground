@@ -4,7 +4,7 @@ const FPS_WINDOW_MS = 750;
 const DOM_UPDATE_INTERVAL_MS = 250;
 
 /**
- * FPS/particle-count/active-cell-count HUD, following the same convention as
+ * Backend/FPS/particle-count/active-cell-count HUD, following the same convention as
  * `ui/Overlay.ts` — a thin module wired only to `Simulation`'s public API,
  * writing straight into the container element passed in.
  *
@@ -16,8 +16,9 @@ const DOM_UPDATE_INTERVAL_MS = 250;
 export function createReadout(container: HTMLElement, sim: Simulation): { tick(): void } {
   const frameTimes: number[] = [];
   let lastDomUpdate = 0;
+  const backendLabel = `Backend: ${sim.backend.kind} · ${sim.backend.cellSize} px`;
 
-  container.textContent = `FPS: — | Particles: 0 | Active cells: 0 | Brush: ${sim.getStats().brushSize}`;
+  container.textContent = `${backendLabel} | FPS: — | Particles: 0 | Active cells: 0 | Brush: ${sim.getStats().brushSize}`;
 
   return {
     tick(): void {
@@ -31,7 +32,7 @@ export function createReadout(container: HTMLElement, sim: Simulation): { tick()
       const windowSeconds = Math.min(now, FPS_WINDOW_MS) / 1000;
       const fps = windowSeconds > 0 ? Math.round(frameTimes.length / windowSeconds) : 0;
       const { particleCount, activeCellCount, brushSize } = sim.getStats();
-      container.textContent = `FPS: ${fps} | Particles: ${particleCount} | Active cells: ${activeCellCount} | Brush: ${brushSize}`;
+      container.textContent = `${backendLabel} | FPS: ${fps} | Particles: ${particleCount} | Active cells: ${activeCellCount} | Brush: ${brushSize}`;
     },
   };
 }

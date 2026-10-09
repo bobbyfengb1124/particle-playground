@@ -29,8 +29,8 @@ export interface SimBackend {
   spawnParticlesAt(x: number, y: number, count: number): void;
   launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue): void;
   setWindZones(zones: readonly WindZone[]): void;
-  /** Cells and particles only; the UI overlays stay in Simulation. */
-  renderScene(ctx: CanvasRenderingContext2D, lighting: boolean, frame: number): void;
+  /** Cells and particles only, drawn onto the backend's own #scene canvas; the UI overlays stay in Simulation. */
+  renderScene(lighting: boolean, frame: number): void;
   getStats(): BackendStats;
   /** Async because the GPU backend copies its cells back from the device. Wind zones aren't included. */
   exportCells(): Promise<SceneData>;

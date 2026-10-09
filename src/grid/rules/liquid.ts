@@ -13,7 +13,7 @@ import type { RuleFn } from "./types";
  * straight to the furthest empty cell — is what makes this converge: once
  * both neighbors are occupied the cell simply stops, instead of an isolated
  * cell on an open floor perpetually re-rolling a long-range jump and never
- * settling.
+ * settling. GPU twin: src/gpu/shaders/rules/liquid.wgsl — keep the two in step.
  */
 export function createLiquidRule(material: MaterialIdValue): RuleFn {
   const selfDensity = MATERIALS[material].density ?? 0;

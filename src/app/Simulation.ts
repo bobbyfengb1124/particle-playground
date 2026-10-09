@@ -8,8 +8,9 @@ import { parseScene, REFERENCE_CELL_SIZE } from "../grid/scene";
 import type { ParticleSystem } from "../particles/ParticleSystem";
 import { MAX_WIND_ZONES, normalizeZoneRect, ZONE_WIND_MAX, type WindZone } from "../wind/WindField";
 
-const DEFAULT_GRAVITY = 1400; // px/s^2 — tuned for a snappy arcade feel at this canvas scale
-const DEFAULT_CELL_SIZE = 4; // px per grid cell
+export const DEFAULT_GRAVITY = 1400; // px/s^2 — tuned for a snappy arcade feel at this canvas scale
+export const DEFAULT_CELL_SIZE = 4; // px per grid cell
+export const DEFAULT_PARTICLE_CAPACITY = 4000;
 export const MAX_BRUSH_SIZE = 8; // cells — shared clamp for the slider, scroll-wheel, and pinch input paths
 
 // A rocket always launches straight up; only how far the user dragged before
@@ -26,9 +27,11 @@ export interface SimulationOptions {
   particleCapacity?: number;
   gravity?: number;
   cellSize?: number;
+  /** Built by main.ts (it needs the #scene canvas). Absent in tests: Simulation builds a headless CpuBackend from the options above. */
+  backend?: SimBackend;
 }
 
-/** Orchestrator: owns the UI state (AppState, wind zones, hover/draft overlays) and drives a SimBackend behind a wall-clock-agnostic tick(dt)/render(ctx) pair. */
+/** Orchestrator: owns the UI state (AppState, wind zones, hover/draft overlays) and drives a SimBackend behind a wall-clock-agnostic tick(dt)/render(overlayCtx) pair. */
 export class Simulation {
   readonly width: number;
   readonly height: number;
@@ -49,14 +52,16 @@ export class Simulation {
     this.width = opts.width;
     this.height = opts.height;
     this.gravity = opts.gravity ?? DEFAULT_GRAVITY;
-    this.backend = new CpuBackend({
-      width: this.width,
-      height: this.height,
-      cellSize: opts.cellSize ?? DEFAULT_CELL_SIZE,
-      seed: opts.seed ?? 1,
-      particleCapacity: opts.particleCapacity ?? 4000,
-      gravity: this.gravity,
-    });
+    this.backend =
+      opts.backend ??
+      new CpuBackend({
+        width: this.width,
+        height: this.height,
+        cellSize: opts.cellSize ?? DEFAULT_CELL_SIZE,
+        seed: opts.seed ?? 1,
+        particleCapacity: opts.particleCapacity ?? DEFAULT_PARTICLE_CAPACITY,
+        gravity: this.gravity,
+      });
     this.cellSize = this.backend.cellSize;
   }
 
@@ -257,11 +262,13 @@ export class Simulation {
     return { ...this.backend.getStats(), brushSize: this.appState.brushSize };
   }
 
-  render(ctx: CanvasRenderingContext2D): void {
-    this.backend.renderScene(ctx, this.appState.lightingEnabled, this.lightTickCount);
-    this.renderWindZones(ctx);
-    if (this.appState.mode === "paint" && this.hoverPoint) this.renderBrushOutline(ctx, this.hoverPoint);
-    if (this.appState.mode === "wind-zone" && this.zoneDraft) this.renderZoneDraft(ctx, this.zoneDraft);
+  /** The backend draws cells and particles onto #scene; this draws the UI overlays (zones, brush outline, zone draft) onto the transparent canvas on top. */
+  render(overlayCtx: CanvasRenderingContext2D): void {
+    this.backend.renderScene(this.appState.lightingEnabled, this.lightTickCount);
+    overlayCtx.clearRect(0, 0, this.width, this.height);
+    this.renderWindZones(overlayCtx);
+    if (this.appState.mode === "paint" && this.hoverPoint) this.renderBrushOutline(overlayCtx, this.hoverPoint);
+    if (this.appState.mode === "wind-zone" && this.zoneDraft) this.renderZoneDraft(overlayCtx, this.zoneDraft);
   }
 
   /** Faint cyan fill (stronger zones are more opaque), a 1px outline, and a row of ›/‹ chevrons pointing downwind. */

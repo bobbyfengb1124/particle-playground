@@ -33,9 +33,37 @@ body {
   font-size: 12px;
 }
 
+#banner {
+  background: #3a2a10;
+  color: #ffd27a;
+  border: 1px solid #8a6a2a;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+#banner[hidden] {
+  display: none;
+}
+
+#stage {
+  position: relative;
+  border: 1px solid #333;
+}
+
+#scene,
+#overlay-canvas {
+  display: block;
+}
+
 #scene {
   background: #000;
-  border: 1px solid #333;
+}
+
+#overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
   touch-action: none;
 }
 

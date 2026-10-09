@@ -4,6 +4,7 @@ import type { RuleFn } from "./types";
 /**
  * Falls straight down if the cell below is empty; otherwise tries a diagonal
  * (down-left/down-right, tie-broken randomly per cell so piles don't lean).
+ * GPU twin: src/gpu/shaders/rules/sand.wgsl — keep the two in step.
  */
 export const stepSand: RuleFn = (grid, x, y, ctx) => {
   const belowY = y + 1;
