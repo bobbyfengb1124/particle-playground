@@ -49,6 +49,14 @@ describe("GpuGrid upload, readback and clear", () => {
     expect(() => grid.upload(new Uint8Array(10), new Uint16Array(10))).toThrow(RangeError);
     grid.destroy();
   });
+
+  it("rejects zone wind of the wrong length or with fractions, and a fractional global wind", async () => {
+    const grid = await GpuGrid.create(device, 97, 65, 1);
+    expect(() => grid.setZoneWind(new Float32Array(10))).toThrow(RangeError);
+    expect(() => grid.setZoneWind(new Float32Array(97 * 65).fill(12.5))).toThrow(RangeError);
+    expect(() => grid.step(1, 12.5)).toThrow(RangeError);
+    grid.destroy();
+  });
 });
 
 describe.each([1, 4])("GPU paint matches CpuBackend.paintBrush at cellSize %i", (cellSize) => {

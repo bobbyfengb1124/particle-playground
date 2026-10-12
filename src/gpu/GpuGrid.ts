@@ -1,15 +1,22 @@
 import { PASS_COUNT, passOrder } from "../grid/PhasedStepper";
+import { windThresholdTable } from "../grid/rules/gas";
 import { REFERENCE_CELL_SIZE } from "../grid/scene";
+import { ZONE_WIND_MAX } from "../wind/WindField";
 import { compileShader } from "./GpuContext";
 import { buildPrelude, MATERIAL_MASK, TIMER_SHIFT } from "./shaders/prelude";
 import commonWgsl from "./shaders/common.wgsl?raw";
 import sandWgsl from "./shaders/rules/sand.wgsl?raw";
 import liquidWgsl from "./shaders/rules/liquid.wgsl?raw";
+import acidWgsl from "./shaders/rules/acid.wgsl?raw";
+import gasWgsl from "./shaders/rules/gas.wgsl?raw";
+import plantWgsl from "./shaders/rules/plant.wgsl?raw";
+import fireWgsl from "./shaders/rules/fire.wgsl?raw";
+import iceWgsl from "./shaders/rules/ice.wgsl?raw";
 import gridWgsl from "./shaders/grid.wgsl?raw";
 
 /** The full grid shader: generated constants, shared helpers, rules, then the entry points. */
 export function gridShaderSource(): string {
-  return [buildPrelude(), commonWgsl, sandWgsl, liquidWgsl, gridWgsl].join("\n");
+  return [buildPrelude(), commonWgsl, sandWgsl, liquidWgsl, acidWgsl, gasWgsl, plantWgsl, fireWgsl, iceWgsl, gridWgsl].join("\n");
 }
 
 /** One brush square in fine cells; mirrors `struct Stamp` in grid.wgsl (4 × 4 bytes). */
@@ -55,13 +62,25 @@ function createBuffers(device: GPUDevice, width: number, height: number) {
     size: MAX_STAMPS * STAMP_BYTES,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
-  return { cells, params, stamps };
+  const zoneWind = device.createBuffer({
+    label: "grid.zoneWind",
+    size: width * height * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  const windThreshold = device.createBuffer({
+    label: "grid.windThreshold",
+    size: (ZONE_WIND_MAX + 1) * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  return { cells, params, stamps, zoneWind, windThreshold };
 }
 
 interface GridBuffers {
   cells: GPUBuffer;
   params: GPUBuffer;
   stamps: GPUBuffer;
+  zoneWind: GPUBuffer;
+  windThreshold: GPUBuffer;
 }
 
 interface GridPipelines {
@@ -79,6 +98,7 @@ export class GpuGrid {
     readonly width: number,
     readonly height: number,
     private readonly seed: number,
+    private readonly scale: number,
     private readonly buffers: GridBuffers,
     private readonly pipelines: GridPipelines,
     private readonly bindGroup: GPUBindGroup,
@@ -99,11 +119,13 @@ export class GpuGrid {
    * `count` times. Each step clears the processed flags, then runs the 9 passes in
    * passOrder(seed, tick). WebGPU makes each dispatch see the previous one's writes,
    * so the passes run strictly one after another, as on the CPU.
+   * `globalWind` is the wind slider value, a whole number, as passed to PhasedStepper.
    */
-  step(count = 1): void {
+  step(count = 1, globalWind = 0): void {
     if (count < 1 || count > MAX_STEPS_PER_CALL) {
       throw new RangeError(`step count ${count} is outside 1..${MAX_STEPS_PER_CALL}`);
     }
+    if (!Number.isInteger(globalWind)) throw new RangeError(`global wind ${globalWind} is not a whole number`);
 
     const slotU32s = SLOT_BYTES / 4;
     const params = new Uint32Array(count * PASS_COUNT * slotU32s);
@@ -111,7 +133,8 @@ export class GpuGrid {
       const tick = this.tickCount + s;
       passOrder(this.seed, tick).forEach((pass, k) => {
         const slot = s * PASS_COUNT + k;
-        params.set([this.width, this.height, this.seed, tick, pass, pass % 3, Math.floor(pass / 3)], slot * slotU32s);
+        // globalWind >>> 0 stores a negative wind as the same 32 bits an i32 has, so Params.globalWind reads it back signed.
+        params.set([this.width, this.height, this.seed, tick, pass, pass % 3, Math.floor(pass / 3), this.scale, globalWind >>> 0], slot * slotU32s);
       });
     }
     this.device.queue.writeBuffer(this.buffers.params, 0, params);
@@ -177,6 +200,20 @@ export class GpuGrid {
     this.device.queue.submit([encoder.finish()]);
   }
 
+  /**
+   * Uploads per-cell zone wind (WindField.values, row-major like the cells); call after the zones change.
+   * Values must be whole numbers: the shader looks the push threshold up by integer wind (windThresholdTable).
+   */
+  setZoneWind(values: Float32Array): void {
+    const cellCount = this.width * this.height;
+    if (values.length !== cellCount) throw new RangeError(`setZoneWind needs ${cellCount} cells, got ${values.length}`);
+    const ints = Int32Array.from(values, (w) => {
+      if (!Number.isInteger(w)) throw new RangeError(`zone wind ${w} is not a whole number`);
+      return w;
+    });
+    this.device.queue.writeBuffer(this.buffers.zoneWind, 0, ints);
+  }
+
   /** Empties every cell (material, timer and flags all 0) — the twin of Grid.clear. */
   clear(): void {
     const encoder = this.device.createCommandEncoder({ label: "grid.clear" });
@@ -228,9 +265,13 @@ export class GpuGrid {
     this.buffers.cells.destroy();
     this.buffers.params.destroy();
     this.buffers.stamps.destroy();
+    this.buffers.zoneWind.destroy();
+    this.buffers.windThreshold.destroy();
   }
 
-  static async create(device: GPUDevice, width: number, height: number, seed: number): Promise<GpuGrid> {
+  /** `scale` is 4 / cellSize (1, 2 or 4) — PhasedStepper's `scale` option; fixed for the grid's life. */
+  static async create(device: GPUDevice, width: number, height: number, seed: number, scale = 1): Promise<GpuGrid> {
+    if (![1, 2, 4].includes(scale)) throw new RangeError(`scale ${scale} must be 1, 2 or 4`);
     const module = await compileShader(device, "grid", gridShaderSource());
     const buffers = createBuffers(device, width, height);
 
@@ -240,6 +281,8 @@ export class GpuGrid {
         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform", hasDynamicOffset: true } },
         { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
       ],
     });
     const bindGroup = device.createBindGroup({
@@ -249,14 +292,17 @@ export class GpuGrid {
         { binding: 0, resource: { buffer: buffers.cells } },
         { binding: 1, resource: { buffer: buffers.params, size: SLOT_BYTES } },
         { binding: 2, resource: { buffer: buffers.stamps } },
+        { binding: 3, resource: { buffer: buffers.zoneWind } },
+        { binding: 4, resource: { buffer: buffers.windThreshold } },
       ],
     });
+    device.queue.writeBuffer(buffers.windThreshold, 0, windThresholdTable());
 
     const pipelineLayout = device.createPipelineLayout({ label: "grid", bindGroupLayouts: [layout] });
     const pipeline = (entryPoint: string): GPUComputePipeline =>
       device.createComputePipeline({ label: `grid.${entryPoint}`, layout: pipelineLayout, compute: { module, entryPoint } });
 
-    return new GpuGrid(device, width, height, seed >>> 0, buffers, {
+    return new GpuGrid(device, width, height, seed >>> 0, scale, buffers, {
       clearProcessed: pipeline("clearProcessed"),
       stepPass: pipeline("stepPass"),
       paint: pipeline("paint"),

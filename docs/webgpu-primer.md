@@ -1,6 +1,6 @@
 # WebGPU primer — through this project's code
 
-A guide to the WebGPU backend added in Step 17b, written for someone who knows
+A guide to the WebGPU backend added in Steps 17b–17c, written for someone who knows
 TypeScript and this codebase but not GPU programming. Each concept is explained
 plainly, then shown where it lives in our files and why it's done that way.
 
@@ -97,19 +97,21 @@ GPU code is written in **WGSL**, a small Rust-like language. Ours is assembled
 from pieces by `gridShaderSource()`:
 
 ```ts
-[buildPrelude(), commonWgsl, sandWgsl, liquidWgsl, gridWgsl].join("\n")
+[buildPrelude(), commonWgsl, sandWgsl, liquidWgsl, acidWgsl, gasWgsl, plantWgsl, fireWgsl, iceWgsl, gridWgsl].join("\n")
 ```
 
 - **`prelude.ts`** *generates* WGSL from the TS tables — `const MAT_SAND: u32 = 1u;`,
   the `density()` switch, the packing constants — so material ids can't drift
   between CPU and GPU. (`tests/unit/gpuPrelude.test.ts` checks it.)
-- **`common.wgsl`** — `Params`, the cell buffer declaration, the RNG (`hash32`,
-  `cellRng`, `nextU32`, twins of `src/core/cellRng.ts`) and grid helpers
-  (`moveCell`, `swapCells`, twins of `Grid`).
-- **`rules/sand.wgsl`, `rules/liquid.wgsl`** — line-for-line twins of
-  `src/grid/rules/sand.ts` and `liquid.ts`. Each pair carries a "keep in step"
-  comment: change one, change the other, and the parity tests will tell you if
-  they disagree.
+- **`common.wgsl`** — `Params`, the buffer declarations, the RNG (`hash32`,
+  `cellRng`, `nextU32`, twins of `src/core/cellRng.ts`) and grid helpers, twins of
+  `Grid`: `moveCell`, `swapCells`, `transformCell`, `resetTimer` (deliberately
+  doesn't mark the cell processed), `incrementTimer` (returns the unwrapped age,
+  65535 → 65536, like the CPU), `getMat`, `getTimer`, and the shared `NEIGHBORS` order.
+- **`rules/*.wgsl`** — one line-for-line twin per `src/grid/rules/*.ts` file: sand,
+  liquid (water, oil, and acid's fallback), acid, gas (smoke, steam, wind), plant
+  (seed), fire, ice. Each pair carries a "keep in step" comment: change one, change
+  the other, and the parity tests will tell you if they disagree.
 - **`grid.wgsl`** — the entry points: `clearProcessed`, `stepPass`, `paint`.
 - **`?raw`** (`import commonWgsl from "./shaders/common.wgsl?raw"`) is Vite
   loading the file as a plain string.
@@ -125,6 +127,12 @@ WGSL notes that tripped us up:
 - Coordinates are `i32` because rules look at `x - 1`, which can be −1.
 - The RNG is passed as `ptr<function, CellRng>` so that a rule's draws advance
   the caller's counter, like passing the CPU's `rng` object.
+- `NEIGHBORS` (and the seed's `targetXs`) are `var`, not `const`: indexing a
+  `const` array with a loop counter wasn't reliably supported, and a `var` always is.
+- `_ = incrementTimer(x, y);` — WGSL rejects a bare call that returns a value;
+  `_ =` means "call it, ignore the result".
+- Timer bytes: the seed packs two counters in its 16-bit timer (low byte = watered
+  ticks, high byte = stage), read with `& 0xffu` and `>> 8u`.
 
 ## 4. Pipelines, workgroups and dispatch
 
@@ -192,6 +200,23 @@ different `Params`. Rather than 36 buffers, `params` has 36 slots of 256 bytes
 ```ts
 compute.setBindGroup(0, this.bindGroup, [(s * PASS_COUNT + k) * SLOT_BYTES]);
 ```
+
+**Wind (bindings 3 and 4).** Gas reads two more read-only buffers:
+
+```wgsl
+@group(0) @binding(3) var<storage, read> zoneWind: array<i32>;      // one per cell
+@group(0) @binding(4) var<storage, read> windThreshold: array<u32>; // 801 entries
+```
+
+- `zoneWind` is `WindField.values` as integers. `GpuBackend.setWindZones` uploads it
+  only when zones change (draw, Clear Zones, Load), never per frame.
+- `windThreshold` is a lookup table, uploaded once in `GpuGrid.create`. The CPU's
+  push chance is computed in 64-bit floats; WGSL only has 32-bit, which rounds
+  differently (wind 10: 42,949,673 vs 42,949,672) and would make the grids drift.
+  Wind is always a whole number in −800..800, so `windThresholdTable()` precomputes
+  all 801 thresholds on the CPU and the shader looks up `windThreshold[abs(w)]`.
+- The slider value travels in `Params.globalWind` (an `i32`; `GpuGrid.step` writes
+  it with `>>> 0` so a negative value keeps its bits). Non-whole wind throws.
 
 ## 6. Command encoder → submit
 
@@ -279,13 +304,22 @@ CPU, exactly:
 - **`gridParity.test.ts`** — run the same scene on `PhasedStepper` and `GpuGrid`
   for 1/50/200 ticks; every cell's material and timer must match.
   `describeMismatch` names the first differing cell.
+- **`ruleParity.test.ts`** — one parity scene per rule (acid, smoke/steam, seed,
+  fire, ice, wind), each a random scatter of the rule's material plus everything it
+  touches (`scatterScene`), run through `runParity`. Timed rules also run at scale 4
+  (the 1 px grid), and 1% of timers start at 65535. The last block puts all 12
+  materials together with wind zones and the slider, including a run at 4 steps
+  per submit (the 1 px app path).
+- **`gpuBackend.test.ts`** also checks wind end to end through `GpuBackend`: smoke
+  rises straight with no wind, and drifts downwind with a zone or the slider.
 - **`render.test.ts`** — GPU pixels vs CPU `GridRenderer` pixels, at 1 px and 4 px.
 - **`gridCommands.test.ts`**, **`gpuBackend.test.ts`** — upload/readback
   round-trip, clear, paint, stamp flushing.
 - **`gpuChecked`** (`tests/gpu/helpers.ts`) wraps calls in an error scope, so a
   validation error fails the test instead of being a console warning.
 - **Mutation checks**: each test was confirmed to fail when a deliberate bug was
-  introduced (swapped sand direction, wrong timer shift, no stamp flush, …).
+  introduced (swapped sand direction, wrong timer shift, no stamp flush; plant cap
+  without scale, steam reset marking processed, rolling for wind when there's none, …).
 
 Running them:
 

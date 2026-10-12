@@ -21,6 +21,7 @@ const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
  * spawns smoke directly above itself whenever that cell is empty — the
  * empty-cell requirement naturally rate-limits it to one rising smoke cell
  * per column at a time, rather than needing a separate spawn probability.
+ * GPU twin: src/gpu/shaders/rules/fire.wgsl — keep the two in step.
  */
 export const stepFire: RuleFn = (grid, x, y, ctx) => {
   const age = grid.incrementTimer(x, y);

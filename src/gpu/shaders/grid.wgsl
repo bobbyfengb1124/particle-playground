@@ -47,6 +47,24 @@ fn stepPass(@builtin(global_invocation_id) id: vec3<u32>) {
     case MAT_WATER, MAT_OIL: {
       stepLiquid(x, y, density(mat), &rng);
     }
+    case MAT_ACID: {
+      stepAcid(x, y, &rng);
+    }
+    case MAT_SMOKE: {
+      stepGas(x, y, SMOKE_LIFETIME_TICKS, MAT_EMPTY, &rng);
+    }
+    case MAT_STEAM: {
+      stepGas(x, y, STEAM_REVERT_TICKS, MAT_WATER, &rng);
+    }
+    case MAT_SEED: {
+      stepSeed(x, y, &rng);
+    }
+    case MAT_FIRE: {
+      stepFire(x, y);
+    }
+    case MAT_ICE: {
+      stepIce(x, y, &rng);
+    }
     default: {}
   }
 }

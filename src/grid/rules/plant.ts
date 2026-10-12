@@ -36,6 +36,7 @@ function isLiquid(id: number): boolean {
  * per-cell timer field instead: low byte = ticks toward the next stage,
  * high byte = stages already climbed. A plain incrementTimer() is safe for
  * the ticks half since it never reaches 256 before triggering growth.
+ * GPU twin: src/gpu/shaders/rules/plant.wgsl — keep the two in step.
  */
 export const stepSeed: RuleFn = (grid, x, y, ctx) => {
   const belowY = y + 1;

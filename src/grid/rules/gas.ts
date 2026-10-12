@@ -22,6 +22,16 @@ export function windPushThreshold(w: number): number {
 }
 
 /**
+ * windPushThreshold for every whole wind strength 0..ZONE_WIND_MAX. GpuGrid uploads it once,
+ * and the GPU gas rule looks thresholds up by |wind| instead of computing them (WGSL has no
+ * f64, and f32 would round differently). Wind is always whole — sliders step 10/50 and scene
+ * files must hold integer strengths.
+ */
+export function windThresholdTable(): Uint32Array<ArrayBuffer> {
+  return Uint32Array.from({ length: ZONE_WIND_MAX + 1 }, (_, w) => windPushThreshold(w));
+}
+
+/**
  * Shared rule for every gas (smoke, steam): each tick, age one tick closer
  * to a fixed lifetime and — once it elapses — convert to `onExpire` (EMPTY
  * for smoke dissipating away; WATER for steam condensing back down).
@@ -34,6 +44,7 @@ export function windPushThreshold(w: number): number {
  * proportional to its strength, the gas drifts one cell downwind — up-diagonal
  * first, then sideways — before the normal movement is tried. No RNG is drawn
  * when the wind is 0, so windless ticks stay byte-identical to the pre-wind rule.
+ * GPU twin: src/gpu/shaders/rules/gas.wgsl — keep the two in step.
  */
 export function createGasRule(lifetimeTicks: number, onExpire: MaterialIdValue): RuleFn {
   return (grid, x, y, ctx) => {

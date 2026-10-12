@@ -20,6 +20,7 @@ const flowLikeLiquid = createLiquidRule(Material.ACID);
  * dissolve them, which this eager scan already does before movement is ever
  * attempted. Only when nothing adjacent is dissolvable does it fall back to
  * ordinary liquid movement, reusing `createLiquidRule` unmodified.
+ * GPU twin: src/gpu/shaders/rules/acid.wgsl — keep the two in step.
  */
 export const stepAcid: RuleFn = (grid, x, y, ctx) => {
   for (const [dx, dy] of NEIGHBOR_OFFSETS) {

@@ -63,3 +63,29 @@ it("tick steps the grid: a lone sand cell at 4 px falls one cell", async () => {
   expect(material[6 * width + 10]).toBe(Material.SAND);
   expect(gpu.getStats()).toEqual({ particleCount: 0, activeCellCount: 0 });
 });
+
+/** Paints one smoke cell at (30, 30) on the 4 px grid, ticks 10 times, and returns the column it ended up in. */
+async function smokeColumnAfter(setup: (b: GpuBackend) => void, globalWind: number): Promise<number> {
+  const gpu = await gpuBackend(4);
+  setup(gpu);
+  gpu.paintBrush(30, 30, 0, Material.SMOKE);
+  for (let i = 0; i < 10; i++) gpu.tick(1 / 60, globalWind);
+  const { material, width } = await gpu.exportCells();
+  const idx = material.indexOf(Material.SMOKE);
+  expect(idx, "the smoke cell is still there").toBeGreaterThanOrEqual(0);
+  return idx % width;
+}
+
+describe("GpuBackend wind", () => {
+  it("smoke rises straight up with no wind", async () => {
+    expect(await smokeColumnAfter(() => {}, 0)).toBe(30);
+  });
+
+  it("a wind zone pushes smoke downwind", async () => {
+    expect(await smokeColumnAfter((b) => b.setWindZones([{ gx: 0, gy: 0, gw: 60, gh: 40, strength: 800 }]), 0)).toBeGreaterThan(30);
+  });
+
+  it("the wind slider pushes smoke downwind", async () => {
+    expect(await smokeColumnAfter(() => {}, -400)).toBeLessThan(30);
+  });
+});

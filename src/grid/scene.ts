@@ -90,7 +90,7 @@ function isValidWindZone(value: unknown, width: number, height: number): value i
   if (![gx, gy, gw, gh].every(Number.isInteger)) return false;
   const [x, y, w, h] = [gx, gy, gw, gh] as number[];
   if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > width || y + h > height) return false;
-  return typeof strength === "number" && Number.isFinite(strength) && Math.abs(strength) <= ZONE_WIND_MAX;
+  return typeof strength === "number" && Number.isInteger(strength) && Math.abs(strength) <= ZONE_WIND_MAX;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

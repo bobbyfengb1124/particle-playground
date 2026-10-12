@@ -18,6 +18,7 @@ const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
  * on a pond freezes it downward a layer at a time. Oil never freezes, and
  * fire.ts is never touched — a melted cell is ordinary water that fire's
  * own existing water→steam scan picks up on its own.
+ * GPU twin: src/gpu/shaders/rules/ice.wgsl — keep the two in step.
  */
 export const stepIce: RuleFn = (grid, x, y, ctx) => {
   const belowY = y + 1;

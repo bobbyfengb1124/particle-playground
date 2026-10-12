@@ -8,10 +8,16 @@ struct Params {
   passIndex: u32,
   phaseX: u32,
   phaseY: u32,
+  scale: u32, // 4 / cellSize: tickScale for lifetimes, cellRatio for the plant cap (always equal, as in PhasedStepper)
+  globalWind: i32, // the wind slider, a whole number in -800..800; stepGas adds each cell's zone wind
 }
 
 @group(0) @binding(0) var<storage, read_write> cells: array<u32>;
 @group(0) @binding(1) var<uniform> params: Params;
+// Per-cell zone wind (WindField.values, already clamped to ±800), uploaded only when zones change.
+@group(0) @binding(3) var<storage, read> zoneWind: array<i32>;
+// windThresholdTable(): entry w is the push threshold for |wind| = w (0..800), uploaded once at create.
+@group(0) @binding(4) var<storage, read> windThreshold: array<u32>;
 
 // Twin of src/core/cellRng.ts. WGSL u32 `*` and `+` wrap on overflow, exactly like Math.imul and `>>> 0`.
 fn hash32(v: u32) -> u32 {
@@ -57,6 +63,41 @@ fn cellIndex(x: i32, y: i32) -> u32 {
 
 fn getMat(x: i32, y: i32) -> u32 {
   return cells[cellIndex(x, y)] & MATERIAL_MASK;
+}
+
+fn getTimer(x: i32, y: i32) -> u32 {
+  return cells[cellIndex(x, y)] >> TIMER_SHIFT;
+}
+
+// The 8 neighbours, in the same order as the TS rules' NEIGHBOR_OFFSETS — order matters where a
+// rule acts on the first match (acid dissolves the first, seed drinks the first water found).
+var<private> NEIGHBORS: array<vec2<i32>, 8> = array(
+  vec2(-1, -1), vec2(0, -1), vec2(1, -1),
+  vec2(-1, 0), vec2(1, 0),
+  vec2(-1, 1), vec2(0, 1), vec2(1, 1),
+);
+
+// Twin of Grid.transformMaterial: new material and timer, marked processed so the cell doesn't
+// also run its new rule later this tick (wood that catches fire doesn't burn the same tick).
+fn transformCell(x: i32, y: i32, mat: u32, timer: u32) {
+  cells[cellIndex(x, y)] = mat | (timer << TIMER_SHIFT) | PROCESSED;
+}
+
+// Twin of Grid.resetTimer: timer back to 0, material and processed flag kept. Deliberately does
+// NOT mark the cell processed — steam right above a fire must still get its own turn to rise
+// (see the comment on Grid.resetTimer).
+fn resetTimer(x: i32, y: i32) {
+  let idx = cellIndex(x, y);
+  cells[idx] = cells[idx] & ((1u << TIMER_SHIFT) - 1u);
+}
+
+// Twin of Grid.incrementTimer: stores timer + 1 wrapped to 16 bits but returns it unwrapped
+// (65535 → stores 0, returns 65536), exactly as the CPU's Uint16Array store and `+ 1` do.
+fn incrementTimer(x: i32, y: i32) -> u32 {
+  let idx = cellIndex(x, y);
+  let cell = cells[idx];
+  cells[idx] = cell + (1u << TIMER_SHIFT);
+  return (cell >> TIMER_SHIFT) + 1u;
 }
 
 // Twin of Grid.moveMaterial: the destination gets material + timer and is marked processed; the source becomes EMPTY with timer 0.

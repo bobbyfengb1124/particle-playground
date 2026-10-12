@@ -126,6 +126,7 @@ describe("parseScene", () => {
     ["a zone past the grid edge", [{ gx: 1, gy: 0, gw: 2, gh: 1, strength: 100 }]],
     ["a strength beyond ±800", [{ gx: 0, gy: 0, gw: 1, gh: 1, strength: 900 }]],
     ["a non-numeric strength", [{ gx: 0, gy: 0, gw: 1, gh: 1, strength: "strong" }]],
+    ["a fractional strength", [{ gx: 0, gy: 0, gw: 1, gh: 1, strength: 12.5 }]],
     ["more than 32 zones", Array(33).fill({ gx: 0, gy: 0, gw: 1, gh: 1, strength: 100 })],
   ])("rejects wind zone data with %s", (_label, windZones) => {
     const scene = { width, height, material: [0, 0, 0, 0], timer: [0, 0, 0, 0], windZones };
