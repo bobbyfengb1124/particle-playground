@@ -19,37 +19,10 @@ struct Params {
 // windThresholdTable(): entry w is the push threshold for |wind| = w (0..800), uploaded once at create.
 @group(0) @binding(4) var<storage, read> windThreshold: array<u32>;
 
-// Twin of src/core/cellRng.ts. WGSL u32 `*` and `+` wrap on overflow, exactly like Math.imul and `>>> 0`.
-fn hash32(v: u32) -> u32 {
-  var x = v;
-  x = x ^ (x >> 16u);
-  x = x * 0x7feb352du;
-  x = x ^ (x >> 15u);
-  x = x * 0x846ca68bu;
-  return x ^ (x >> 16u);
-}
-
-const GOLDEN: u32 = 0x9e3779b9u;
-
-struct CellRng {
-  base: u32,
-  counter: u32,
-}
-
+// A grid cell's RNG for this pass; hash32 and CellRng are in rng.wgsl.
 fn cellRng(idx: u32) -> CellRng {
   let base = hash32(params.seed ^ hash32(params.tick ^ hash32(idx * 9u + params.passIndex)));
   return CellRng(base, 0u);
-}
-
-fn nextU32(rng: ptr<function, CellRng>) -> u32 {
-  let draw = hash32((*rng).base + (*rng).counter * GOLDEN);
-  (*rng).counter += 1u;
-  return draw;
-}
-
-// Exactly `rng.next() < 0.5` on the CPU, since next() is nextU32() / 2^32.
-fn rngBelowHalf(rng: ptr<function, CellRng>) -> bool {
-  return nextU32(rng) < 0x80000000u;
 }
 
 // Twins of Grid's helpers. Coordinates are i32 because rules probe x - 1 / y + 1, which can go off the edge.

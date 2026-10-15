@@ -16,6 +16,8 @@ export class AppState {
   fireworkPattern: FireworkPatternValue = FireworkPattern.RING;
   /** Colour the next launched rocket bursts in; rockets already in flight keep their own. */
   fireworkColor: FireworkColorValue = FireworkColor.GOLD;
+  /** Ember-count multiplier for the next launched rocket (1–64, a power of two); GPU only (Q14). Rockets in flight keep their own. */
+  burstDensity = 16;
   /** Whether render() runs the fire/ember glow pass. Drawing-only: the sim's state is identical either way. */
   lightingEnabled = true;
 }

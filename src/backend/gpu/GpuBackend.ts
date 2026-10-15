@@ -1,11 +1,16 @@
-import type { FireworkColorValue, FireworkPatternValue } from "../../core/types";
+import { deriveSeed } from "../../core/Rng";
+import { type FireworkColorValue, type FireworkPatternValue, ParticleKind } from "../../core/types";
 import { onDeviceLost, requestGpu } from "../../gpu/GpuContext";
 import { brushStamp, GpuGrid, type Stamp } from "../../gpu/GpuGrid";
+import { GpuParticles, packFlags } from "../../gpu/GpuParticles";
 import { GpuRenderer } from "../../gpu/GpuRenderer";
 import type { MaterialIdValue } from "../../grid/materials";
 import { REFERENCE_CELL_SIZE, type SceneData } from "../../grid/scene";
 import { WindField, type WindZone } from "../../wind/WindField";
 import type { BackendStats, SimBackend } from "../SimBackend";
+
+/** Particle slots on the GPU (Q13): 2^18, enough for dense firework bursts. */
+const GPU_PARTICLE_CAPACITY = 262_144;
 
 export interface GpuBackendOptions {
   width: number; // canvas pixels
@@ -15,12 +20,13 @@ export interface GpuBackendOptions {
   canvas: HTMLCanvasElement; // the #scene canvas; required, since the GPU backend always renders
   /** Accept a software adapter (SwiftShader). True for an explicit ?backend=gpu; auto-select (17e) passes false. */
   allowFallback: boolean;
+  gravity: number; // px/s², passed to GpuParticles
 }
 
 /**
- * The WebGPU engine: GpuGrid steps the cells and GpuRenderer draws them. Every grid
- * material has a GPU rule, and gas follows wind zones and the wind slider; particles,
- * rockets and lighting are still no-ops (17d, 17e).
+ * The WebGPU engine: GpuGrid steps the cells, GpuParticles steps generic particles and
+ * GpuRenderer draws the cells. Every grid material has a GPU rule, and gas follows wind
+ * zones and the wind slider; particle drawing, rockets and lighting are still no-ops (17d, 17e).
  */
 export class GpuBackend implements SimBackend {
   readonly kind = "gpu";
@@ -33,6 +39,7 @@ export class GpuBackend implements SimBackend {
   private constructor(
     private readonly device: GPUDevice,
     private readonly grid: GpuGrid,
+    private readonly particles: GpuParticles,
     private readonly renderer: GpuRenderer,
     cellSize: number,
   ) {
@@ -50,8 +57,16 @@ export class GpuBackend implements SimBackend {
     const gridWidth = Math.max(1, Math.floor(opts.width / opts.cellSize));
     const gridHeight = Math.max(1, Math.floor(opts.height / opts.cellSize));
     const grid = await GpuGrid.create(gpu.device, gridWidth, gridHeight, opts.seed, REFERENCE_CELL_SIZE / opts.cellSize);
-    const renderer = await GpuRenderer.create(gpu.device, opts.canvas, grid, opts.cellSize);
-    return new GpuBackend(gpu.device, grid, renderer, opts.cellSize);
+    const particles = await GpuParticles.create(gpu.device, grid, {
+      capacity: GPU_PARTICLE_CAPACITY,
+      seed: deriveSeed(opts.seed, 1),
+      cellSize: opts.cellSize,
+      width: opts.width,
+      height: opts.height,
+      gravity: opts.gravity,
+    });
+    const renderer = await GpuRenderer.create(gpu.device, opts.canvas, grid, opts.cellSize, particles);
+    return new GpuBackend(gpu.device, grid, particles, renderer, opts.cellSize);
   }
 
   /** Calls `cb` if the GPU goes away mid-session (driver reset, GPU process crash). */
@@ -72,9 +87,10 @@ export class GpuBackend implements SimBackend {
     this.grid.clear();
   }
 
-  /** dt drives particles, which arrive in 17d. globalWind is the wind slider, passed to every grid step. */
-  tick(_dt: number, globalWind: number): void {
+  /** CPU order: stamps, then particles (reading last tick's grid), then the grid. globalWind is the wind slider. */
+  tick(dt: number, globalWind: number): void {
     this.flushStamps();
+    this.particles.tick(dt, globalWind);
     this.grid.step(this.tickScale, globalWind);
   }
 
@@ -90,10 +106,16 @@ export class GpuBackend implements SimBackend {
     this.pendingStamps = [];
   }
 
-  /** 17d: particles and rockets don't exist on the GPU yet. */
-  spawnParticlesAt(_x: number, _y: number, _count: number): void {}
+  /** One GENERIC request (flags 0, no inherited velocity); the shader's spawnGeneric rolls each particle like CpuBackend does. */
+  spawnParticlesAt(x: number, y: number, count: number): void {
+    this.particles.request({ x, y, vx: 0, vy: 0, flags: 0, count });
+  }
 
-  launchRocket(_x: number, _y: number, _speed: number, _pattern: FireworkPatternValue, _color: FireworkColorValue): void {}
+  /** One ROCKET request, straight up like CPU launchRocket. Density travels as log2 in the flags (Q11), so 16× is stored as 4. */
+  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, density: number): void {
+    const flags = packFlags(ParticleKind.ROCKET, pattern, color, Math.log2(density));
+    this.particles.request({ x, y, vx: 0, vy: -speed, flags, count: 1 });
+  }
 
   /** Rebuilds the per-cell zone wind and uploads it; only called when zones change (draw, Clear Zones, Load). */
   setWindZones(zones: readonly WindZone[]): void {
@@ -101,9 +123,9 @@ export class GpuBackend implements SimBackend {
     this.grid.setZoneWind(this.windField.values);
   }
 
-  /** No particles until 17d, and no active-cell tracking at all: the GPU scans every cell each pass. */
+  /** particleCount is up to 15 ticks stale (the periodic alive readback). No active-cell tracking: the GPU scans every cell each pass. */
   getStats(): BackendStats {
-    return { particleCount: 0, activeCellCount: 0 };
+    return { particleCount: this.particles.aliveCount, activeCellCount: 0 };
   }
 
   /** Flushes queued stamps first, so a Save straight after painting includes them. Same shape as serializeScene's output. */

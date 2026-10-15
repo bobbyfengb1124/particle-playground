@@ -1,6 +1,6 @@
 import { AppState, type InteractionMode } from "./AppState";
 import { CpuBackend } from "../backend/cpu/CpuBackend";
-import type { SimBackend } from "../backend/SimBackend";
+import type { BackendKind, SimBackend } from "../backend/SimBackend";
 import type { FireworkColorValue, FireworkPatternValue } from "../core/types";
 import type { Grid } from "../grid/Grid";
 import type { MaterialIdValue } from "../grid/materials";
@@ -237,6 +237,19 @@ export class Simulation {
     this.appState.fireworkColor = color;
   }
 
+  get burstDensity(): number {
+    return this.appState.burstDensity;
+  }
+
+  setBurstDensity(density: number): void {
+    this.appState.burstDensity = density;
+  }
+
+  /** Which engine runs the sim; the overlay shows GPU-only controls (burst density) only on "gpu". */
+  get backendKind(): BackendKind {
+    return this.backend.kind;
+  }
+
   /**
    * Launches a rocket straight up from (x0, y0); the drag distance to
    * (x1, y1) sets how high it flies before bursting — direction is ignored,
@@ -248,7 +261,7 @@ export class Simulation {
     const power = Math.min(1, dragDistance / (this.height * FULL_POWER_DRAG_FRACTION));
     const targetHeight = this.height * (MIN_LAUNCH_HEIGHT_FRACTION + power * (MAX_LAUNCH_HEIGHT_FRACTION - MIN_LAUNCH_HEIGHT_FRACTION));
     const speed = Math.sqrt(2 * this.gravity * targetHeight);
-    this.backend.launchRocket(x0, y0, speed, this.appState.fireworkPattern, this.appState.fireworkColor);
+    this.backend.launchRocket(x0, y0, speed, this.appState.fireworkPattern, this.appState.fireworkColor, this.appState.burstDensity);
   }
 
   tick(dt: number): void {

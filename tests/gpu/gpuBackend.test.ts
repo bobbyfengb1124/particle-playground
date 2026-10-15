@@ -17,7 +17,7 @@ function makeCanvas(): HTMLCanvasElement {
 
 /** Fails loudly, like testDevice, if there's no adapter. */
 async function gpuBackend(cellSize: number): Promise<GpuBackend> {
-  const backend = await GpuBackend.create({ width: WIDTH, height: HEIGHT, cellSize, seed: 1, canvas: makeCanvas(), allowFallback: true });
+  const backend = await GpuBackend.create({ width: WIDTH, height: HEIGHT, cellSize, seed: 1, canvas: makeCanvas(), allowFallback: true, gravity: 0 });
   if (!backend) throw new Error("No WebGPU adapter — check the launch flags in vitest.gpu.config.ts");
   return backend;
 }

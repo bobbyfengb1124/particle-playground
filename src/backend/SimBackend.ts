@@ -27,7 +27,7 @@ export interface SimBackend {
   paintBrush(bx: number, by: number, radius: number, material: MaterialIdValue): void;
   clearGrid(): void;
   spawnParticlesAt(x: number, y: number, count: number): void;
-  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue): void;
+  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, density: number): void;
   setWindZones(zones: readonly WindZone[]): void;
   /** Cells and particles only, drawn onto the backend's own #scene canvas; the UI overlays stay in Simulation. */
   renderScene(lighting: boolean, frame: number): void;

@@ -252,6 +252,18 @@ export function createOverlay(container: HTMLElement, sim: Simulation): { syncBr
   const zoneBtn = createPaletteControl(container, sim);
   createFireworkPatternControl(container, sim);
   createFireworkColorControl(container, sim);
+  if (sim.backendKind === "gpu") {
+    // Q10: positions 0–6 are 1×…64× (2^position); no number shown. CPU bursts are fixed at 24 embers, so it's hidden there.
+    createSlider(container, {
+      id: "burst-density-slider",
+      label: "Burst density",
+      min: 0,
+      max: 6,
+      step: 1,
+      value: Math.log2(sim.burstDensity),
+      onInput: (v) => sim.setBurstDensity(2 ** v),
+    });
+  }
   createSlider(container, {
     id: "zone-wind-slider",
     label: "Zone wind",

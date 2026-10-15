@@ -4,17 +4,17 @@ import { EmberBehavior, FireworkPattern, ParticleKind } from "../core/types";
 import type { Particle } from "./Particle";
 import type { ParticleSystem } from "./ParticleSystem";
 
-const EMBER_COUNT = 24;
-const CROSSETTE_SUB_EMBER_COUNT = 7;
-const EMBER_BASE_SPEED = 130; // px/s
-const EMBER_BASE_DRAG = 0.6; // 1/s
-const EMBER_LIFESPAN = 1.4; // s
+export const EMBER_COUNT = 24;
+export const CROSSETTE_SUB_EMBER_COUNT = 7;
+export const EMBER_BASE_SPEED = 130; // px/s
+export const EMBER_BASE_DRAG = 0.6; // 1/s
+export const EMBER_LIFESPAN = 1.4; // s
 
-const WILLOW_DRAG_MULTIPLIER = 2;
-const WILLOW_GRAVITY_SCALE = 1.6;
+export const WILLOW_DRAG_MULTIPLIER = 2;
+export const WILLOW_GRAVITY_SCALE = 1.6;
 
-const CROSSETTE_SPLIT_FRACTION = 0.45; // fraction of lifespan at which an ember splits
-const STROBE_FLICKER_PERIOD = 0.09; // s per visible/invisible phase
+export const CROSSETTE_SPLIT_FRACTION = 0.45; // fraction of lifespan at which an ember splits
+export const STROBE_FLICKER_PERIOD = 0.09; // s per visible/invisible phase
 
 type ChannelRange = readonly [lo: number, hi: number];
 

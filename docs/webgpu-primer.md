@@ -1,6 +1,6 @@
 # WebGPU primer — through this project's code
 
-A guide to the WebGPU backend added in Steps 17b–17c, written for someone who knows
+A guide to the WebGPU backend added in Steps 17b–17d, written for someone who knows
 TypeScript and this codebase but not GPU programming. Each concept is explained
 plainly, then shown where it lives in our files and why it's done that way.
 
@@ -27,7 +27,8 @@ Files involved:
 | --- | --- |
 | `src/gpu/GpuContext.ts` | Get a device; compile shaders; watch for device loss |
 | `src/gpu/GpuGrid.ts` | The cell buffer and the compute passes that step/paint/clear it |
-| `src/gpu/GpuRenderer.ts` | Draws the cell buffer onto `#scene` |
+| `src/gpu/GpuParticles.ts` | The particle slots, free stack and spawn requests, and the passes that step them |
+| `src/gpu/GpuRenderer.ts` | Draws the cell buffer, then the particles, onto `#scene` |
 | `src/gpu/shaders/*.wgsl`, `prelude.ts` | The GPU code (WGSL) |
 | `src/backend/gpu/GpuBackend.ts` | Implements `SimBackend` using the two above |
 | `tests/gpu/` | Browser tests comparing the GPU against the CPU |
@@ -97,14 +98,17 @@ GPU code is written in **WGSL**, a small Rust-like language. Ours is assembled
 from pieces by `gridShaderSource()`:
 
 ```ts
-[buildPrelude(), commonWgsl, sandWgsl, liquidWgsl, acidWgsl, gasWgsl, plantWgsl, fireWgsl, iceWgsl, gridWgsl].join("\n")
+[buildPrelude(), rngWgsl, commonWgsl, sandWgsl, liquidWgsl, acidWgsl, gasWgsl, plantWgsl, fireWgsl, iceWgsl, gridWgsl].join("\n")
 ```
 
 - **`prelude.ts`** *generates* WGSL from the TS tables — `const MAT_SAND: u32 = 1u;`,
-  the `density()` switch, the packing constants — so material ids can't drift
-  between CPU and GPU. (`tests/unit/gpuPrelude.test.ts` checks it.)
-- **`common.wgsl`** — `Params`, the buffer declarations, the RNG (`hash32`,
-  `cellRng`, `nextU32`, twins of `src/core/cellRng.ts`) and grid helpers, twins of
+  the `density()` switch, the packing constants, and (17d) the particle kinds
+  (`KIND_*`, `EMBER_*`, `PATTERN_*`), the firework tuning constants and the
+  `colorPreset()` switch — so ids and tuning can't drift between CPU and GPU.
+  (`tests/unit/gpuPrelude.test.ts` checks it.)
+- **`rng.wgsl`** — the RNG (`hash32`, `cellRng`, `nextU32`, twins of
+  `src/core/cellRng.ts`), shared by the grid and particle shaders.
+- **`common.wgsl`** — `Params`, the buffer declarations and grid helpers, twins of
   `Grid`: `moveCell`, `swapCells`, `transformCell`, `resetTimer` (deliberately
   doesn't mark the cell processed), `incrementTimer` (returns the unwrapped age,
   65535 → 65536, like the CPU), `getMat`, `getTimer`, and the shared `NEIGHBORS` order.
@@ -315,9 +319,13 @@ CPU, exactly:
 - **`render.test.ts`** — GPU pixels vs CPU `GridRenderer` pixels, at 1 px and 4 px.
 - **`gridCommands.test.ts`**, **`gpuBackend.test.ts`** — upload/readback
   round-trip, clear, paint, stamp flushing.
+- **`particles.test.ts`** — particles can't be compared to the CPU exactly (see §10), so these
+  check invariants: every slot alive or free exactly once (`expectEverySlotOnce`), spawn ranges,
+  refusal at capacity, bounds, release, zone wind, burst counts × density, the one-time crossette
+  split, block ignition over wood, and an over-capacity burst.
 - **`gpuChecked`** (`tests/gpu/helpers.ts`) wraps calls in an error scope, so a
   validation error fails the test instead of being a console warning.
-- **Mutation checks**: each test was confirmed to fail when a deliberate bug was
+- **Mutation checks** (grid tests only; the 17d particle tests weren't checked this way): each test was confirmed to fail when a deliberate bug was
   introduced (swapped sand direction, wrong timer shift, no stamp flush; plant cap
   without scale, steam reset marking processed, rolling for wind when there's none, …).
 
@@ -332,6 +340,67 @@ WEBGPU_ADAPTER=hardware npm run test:gpu  # the real GPU
 
 They run in headless Chromium via Playwright; `vitest.gpu.config.ts` explains the
 launch flags (the default headless shell has no WebGPU at all).
+
+## 10. Particles (17d)
+
+Particles are a different shape of problem from the grid: not one thread per cell, but
+one thread per **slot** in a fixed-size list, where slots come and go.
+
+**Slots and the free stack** (`GpuParticles.ts`, `particles.wgsl`). `particles` is an
+`array<Particle>` with 262,144 slots (52 bytes each, struct in `particleTypes.wgsl`). A
+slot is alive exactly when its `flags` has the ALIVE bit. Free slot numbers sit on a
+stack, `freeStack`, whose height is `counters.freeTop`.
+- `popFreeSlot` takes one: `atomicSub(&counters.freeTop, 1u)`.
+- `releaseSlot` gives one back: clear `flags`, then `atomicAdd` and push.
+
+An **atomic** is a read-modify-write that the hardware does as one step, so thousands of
+threads can pop at once and each gets a different stack position. Pops and pushes never
+share a dispatch, so the stack is never popped and pushed at the same time.
+
+**Spawning goes through requests.** Only the `emit` pass creates particles. Anything that
+wants new ones writes a 32-byte `Request` (position, velocity, `flags`, `count`, ring
+`speed`) into the `requests` buffer:
+- the CPU uploads clicks and launches at the start of `tick()`;
+- the GPU appends apex bursts and crossette splits in `update`, with `appendRequest`
+  (another `atomicAdd`, on `requestCount`).
+
+**Indirect dispatch.** The CPU can't know how many requests the GPU appended without a
+slow readback. So a one-thread pass, `writeEmitArgs`, writes `[requestCount, 1, 1]` into
+a small `INDIRECT` buffer. Then `dispatchWorkgroupsIndirect` makes the GPU read its own
+workgroup count from there. One 64-thread workgroup handles each request, and its
+threads loop over the request's `count`.
+
+**One tick** (one compute pass, dispatches in order):
+
+| dispatch | does |
+| --- | --- |
+| `update` | forces, bounds, ageing, release; rocket apex → burst request; strobe flicker; crossette split → split request |
+| `writeEmitArgs` | sets the emit pass's workgroup count |
+| `emit` | fills every request: `spawnGeneric`, `spawnRocket` or `spawnEmber` |
+| `ignite` | embers inside a non-empty cell are used up; flammable cells in their 4×4 px block become FIRE |
+
+`ignite` writes the grid's own `cells` buffer (binding 6). `GpuBackend.tick` submits
+particles before the grid step, so the grid sees the fires the same tick.
+
+**Not reproducible, by design.** Which slot a particle lands in, and the order of appended
+requests, follow whichever thread's atomic happens first, which varies between runs.
+Random draws are keyed by (seed, tick, request, particle index), not slot. That's why the
+particle tests check invariants instead of exact parity.
+
+**Drawing: instancing.** `GpuRenderer.draw()` runs a second pipeline (`particleDraw.wgsl`)
+in the same render pass, after the cells. `pass.draw(6, capacity)` means "6 vertices
+(two triangles, one square), once per slot". Each copy is an **instance**, and the shader
+gets its slot as `@builtin(instance_index)`.
+- The vertex shader collapses dead slots and strobe "off" embers to a single off-screen
+  point, so nothing is drawn.
+- The fragment shader shades a soft-edged circle:
+  `coverage = clamp(radius − dist + 0.5, 0, 1)`.
+- Colours are **premultiplied** (RGB × alpha), and the blend is `one, one − src alpha`:
+  ordinary "paint on top", the same as canvas `fill()`.
+
+**The particle count readout.** Every 15 ticks (~250 ms), `tick()` copies `freeTop` into a
+4-byte `MAP_READ` buffer and maps it without waiting. `aliveCount` = capacity − freeTop,
+up to 250 ms old.
 
 ## Glossary
 
@@ -348,3 +417,7 @@ launch flags (the default headless shell has no WebGPU at all).
 | Bind group | Buffers plugged into a shader's `@group/@binding` sockets |
 | Encoder / submit | Record commands, then hand them to the GPU to run in order |
 | Twin | A WGSL function that must behave exactly like a named TS one |
+| Atomic | A read-modify-write the hardware does as one step (`atomicAdd`, `atomicSub`) |
+| Indirect dispatch | A dispatch whose workgroup count the GPU reads from a buffer |
+| Instance | One copy of a drawn shape; `draw(6, n)` draws n instances |
+| Premultiplied alpha | Colour stored as RGB × alpha, so blending is one multiply-add |

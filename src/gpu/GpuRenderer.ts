@@ -1,7 +1,10 @@
 import { Material, MATERIALS } from "../grid/materials";
 import { compileShader } from "./GpuContext";
 import type { GpuGrid } from "./GpuGrid";
+import type { GpuParticles } from "./GpuParticles";
 import { buildPrelude } from "./shaders/prelude";
+import particleDrawWgsl from "./shaders/particleDraw.wgsl?raw";
+import particleTypesWgsl from "./shaders/particleTypes.wgsl?raw";
 import renderWgsl from "./shaders/render.wgsl?raw";
 
 /** MATERIALS[].color as RGBA in 0..1, one vec4 per material id. EMPTY stays (0, 0, 0, 0) so #scene's black background shows through, as with GridRenderer. */
@@ -14,6 +17,34 @@ export function paletteData(): Float32Array<ArrayBuffer> {
   return data;
 }
 
+/** Particles over the cells: one 6-corner square per slot. Colours arrive premultiplied, so blending is "one, one − src alpha". */
+async function createParticleDraw(device: GPUDevice, format: GPUTextureFormat, canvas: HTMLCanvasElement, particles: GpuParticles) {
+  const module = await compileShader(device, "particleDraw", [buildPrelude(), particleTypesWgsl, particleDrawWgsl].join("\n"));
+  const over: GPUBlendComponent = { srcFactor: "one", dstFactor: "one-minus-src-alpha" };
+  const pipeline = device.createRenderPipeline({
+    label: "particleDraw",
+    layout: "auto",
+    vertex: { module, entryPoint: "vs" },
+    fragment: { module, entryPoint: "fs", targets: [{ format, blend: { color: over, alpha: over } }] },
+    primitive: { topology: "triangle-list" },
+  });
+  const params = device.createBuffer({
+    label: "particleDraw.params",
+    size: 8,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(params, 0, new Float32Array([canvas.width, canvas.height]));
+  const bindGroup = device.createBindGroup({
+    label: "particleDraw",
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: particles.stateBuffer } },
+      { binding: 1, resource: { buffer: params } },
+    ],
+  });
+  return { pipeline, bindGroup, capacity: particles.capacity };
+}
+
 /** Draws a GpuGrid's cells onto a canvas with WebGPU — the GPU twin of GridRenderer (no lighting until 17e). */
 export class GpuRenderer {
   private constructor(
@@ -21,9 +52,17 @@ export class GpuRenderer {
     private readonly context: GPUCanvasContext,
     private readonly pipeline: GPURenderPipeline,
     private readonly bindGroup: GPUBindGroup,
+    private readonly particleDraw: Awaited<ReturnType<typeof createParticleDraw>> | undefined,
   ) {}
 
-  static async create(device: GPUDevice, canvas: HTMLCanvasElement, grid: GpuGrid, cellSize: number): Promise<GpuRenderer> {
+  /** `particles` is optional so the cell-only render test can skip it; GpuBackend always passes it. */
+  static async create(
+    device: GPUDevice,
+    canvas: HTMLCanvasElement,
+    grid: GpuGrid,
+    cellSize: number,
+    particles?: GpuParticles,
+  ): Promise<GpuRenderer> {
     const context = canvas.getContext("webgpu");
     if (!context) throw new Error("WebGPU canvas context unavailable");
     const format = navigator.gpu.getPreferredCanvasFormat();
@@ -62,7 +101,8 @@ export class GpuRenderer {
         { binding: 2, resource: { buffer: paletteBuffer } },
       ],
     });
-    return new GpuRenderer(device, context, pipeline, bindGroup);
+    const particleDraw = particles && (await createParticleDraw(device, format, canvas, particles));
+    return new GpuRenderer(device, context, pipeline, bindGroup, particleDraw);
   }
 
   /** Draws the grid's current cells. It's queued after any step/paint already submitted, so it shows their result. */
@@ -82,6 +122,11 @@ export class GpuRenderer {
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.draw(3);
+    if (this.particleDraw) {
+      pass.setPipeline(this.particleDraw.pipeline);
+      pass.setBindGroup(0, this.particleDraw.bindGroup);
+      pass.draw(6, this.particleDraw.capacity); // 6 corners × one square per slot
+    }
     pass.end();
     this.device.queue.submit([encoder.finish()]);
   }

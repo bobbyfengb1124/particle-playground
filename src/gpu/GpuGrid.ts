@@ -4,6 +4,7 @@ import { REFERENCE_CELL_SIZE } from "../grid/scene";
 import { ZONE_WIND_MAX } from "../wind/WindField";
 import { compileShader } from "./GpuContext";
 import { buildPrelude, MATERIAL_MASK, TIMER_SHIFT } from "./shaders/prelude";
+import rngWgsl from "./shaders/rng.wgsl?raw";
 import commonWgsl from "./shaders/common.wgsl?raw";
 import sandWgsl from "./shaders/rules/sand.wgsl?raw";
 import liquidWgsl from "./shaders/rules/liquid.wgsl?raw";
@@ -16,7 +17,7 @@ import gridWgsl from "./shaders/grid.wgsl?raw";
 
 /** The full grid shader: generated constants, shared helpers, rules, then the entry points. */
 export function gridShaderSource(): string {
-  return [buildPrelude(), commonWgsl, sandWgsl, liquidWgsl, acidWgsl, gasWgsl, plantWgsl, fireWgsl, iceWgsl, gridWgsl].join("\n");
+  return [buildPrelude(), rngWgsl, commonWgsl, sandWgsl, liquidWgsl, acidWgsl, gasWgsl, plantWgsl, fireWgsl, iceWgsl, gridWgsl].join("\n");
 }
 
 /** One brush square in fine cells; mirrors `struct Stamp` in grid.wgsl (4 × 4 bytes). */
@@ -107,6 +108,11 @@ export class GpuGrid {
   /** One packed u32 per cell (layout in prelude.ts); GpuRenderer reads it directly. */
   get cells(): GPUBuffer {
     return this.buffers.cells;
+  }
+
+  /** Per-cell zone wind (i32), as uploaded by setZoneWind; GpuParticles reads it for particle wind (Q6). */
+  get zoneWind(): GPUBuffer {
+    return this.buffers.zoneWind;
   }
 
   /** Steps run so far — the `tick` the next step will use, as PhasedStepper.tick. */

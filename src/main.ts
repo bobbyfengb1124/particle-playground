@@ -38,6 +38,7 @@ const gpuBackend =
         seed: 1,
         canvas,
         allowFallback: true,
+        gravity: DEFAULT_GRAVITY,
       })
     : null;
 if (launch.backend === "gpu" && !gpuBackend) showBanner("WebGPU unavailable — running on CPU");

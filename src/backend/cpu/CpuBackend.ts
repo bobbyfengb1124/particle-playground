@@ -127,7 +127,7 @@ export class CpuBackend implements SimBackend {
     }
   }
 
-  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue): void {
+  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, _density: number): void {
     launchRocket(this.particles, x, y, speed, pattern, color);
   }
 
