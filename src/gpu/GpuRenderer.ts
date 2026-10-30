@@ -1,7 +1,9 @@
 import { Material, MATERIALS } from "../grid/materials";
 import { compileShader } from "./GpuContext";
 import type { GpuGrid } from "./GpuGrid";
+import type { GpuLighting } from "./GpuLighting";
 import type { GpuParticles } from "./GpuParticles";
+import type { GpuTimer } from "./GpuTimer";
 import { buildPrelude } from "./shaders/prelude";
 import particleDrawWgsl from "./shaders/particleDraw.wgsl?raw";
 import particleTypesWgsl from "./shaders/particleTypes.wgsl?raw";
@@ -45,23 +47,28 @@ async function createParticleDraw(device: GPUDevice, format: GPUTextureFormat, c
   return { pipeline, bindGroup, capacity: particles.capacity };
 }
 
-/** Draws a GpuGrid's cells onto a canvas with WebGPU — the GPU twin of GridRenderer (no lighting until 17e). */
+/** Draws a GpuGrid's cells onto a canvas with WebGPU — the GPU twin of GridRenderer, lit from a GpuLighting map. */
 export class GpuRenderer {
   private constructor(
     private readonly device: GPUDevice,
     private readonly context: GPUCanvasContext,
     private readonly pipeline: GPURenderPipeline,
     private readonly bindGroup: GPUBindGroup,
+    private readonly params: GPUBuffer,
     private readonly particleDraw: Awaited<ReturnType<typeof createParticleDraw>> | undefined,
+    private readonly hasLighting: boolean,
+    private readonly timer: GpuTimer | undefined,
   ) {}
 
-  /** `particles` is optional so the cell-only render test can skip it; GpuBackend always passes it. */
+  /** `particles` and `lighting` are optional so the cell-only render test can skip them; GpuBackend always passes both. */
   static async create(
     device: GPUDevice,
     canvas: HTMLCanvasElement,
     grid: GpuGrid,
     cellSize: number,
     particles?: GpuParticles,
+    lighting?: GpuLighting,
+    timer?: GpuTimer, // times the render pass as "draw"
   ): Promise<GpuRenderer> {
     const context = canvas.getContext("webgpu");
     if (!context) throw new Error("WebGPU canvas context unavailable");
@@ -79,10 +86,17 @@ export class GpuRenderer {
 
     const params = device.createBuffer({
       label: "render.params",
-      size: 16,
+      size: 32, // 6 u32s in RenderParams, rounded up to a multiple of 16
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    device.queue.writeBuffer(params, 0, new Uint32Array([grid.width, grid.height, cellSize, 0]));
+    device.queue.writeBuffer(
+      params,
+      0,
+      new Uint32Array([grid.width, grid.height, cellSize, 0, lighting?.width ?? 1, lighting?.height ?? 1]),
+    );
+    // Without a GpuLighting, `lit` stays 0 and this one black light cell is never read, but binding 3 still needs a buffer.
+    const lightBuffer =
+      lighting?.lightBuffer ?? device.createBuffer({ label: "render.noLight", size: 12, usage: GPUBufferUsage.STORAGE });
 
     const palette = paletteData();
     const paletteBuffer = device.createBuffer({
@@ -99,17 +113,23 @@ export class GpuRenderer {
         { binding: 0, resource: { buffer: grid.cells } },
         { binding: 1, resource: { buffer: params } },
         { binding: 2, resource: { buffer: paletteBuffer } },
+        { binding: 3, resource: { buffer: lightBuffer } },
       ],
     });
     const particleDraw = particles && (await createParticleDraw(device, format, canvas, particles));
-    return new GpuRenderer(device, context, pipeline, bindGroup, particleDraw);
+    return new GpuRenderer(device, context, pipeline, bindGroup, params, particleDraw, lighting !== undefined, timer);
   }
 
-  /** Draws the grid's current cells. It's queued after any step/paint already submitted, so it shows their result. */
-  draw(): void {
+  /**
+   * Draws the grid's current cells, lit when `lit` and a GpuLighting was given. It's queued after any
+   * step/paint/light build already submitted, so it shows their result.
+   */
+  draw(lit = false): void {
+    this.device.queue.writeBuffer(this.params, 12, new Uint32Array([lit && this.hasLighting ? 1 : 0]));
     const encoder = this.device.createCommandEncoder({ label: "render" });
     const pass = encoder.beginRenderPass({
       label: "render",
+      timestampWrites: this.timer?.writes("draw"),
       colorAttachments: [
         {
           view: this.context.getCurrentTexture().createView(),

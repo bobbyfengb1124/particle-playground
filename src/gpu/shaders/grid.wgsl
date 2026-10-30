@@ -9,6 +9,22 @@ struct Stamp {
 }
 
 @group(0) @binding(2) var<storage, read> stamps: array<Stamp>;
+@group(0) @binding(5) var<storage, read_write> nonEmpty: atomic<u32>; // countNonEmpty's total, zeroed by GpuGrid first
+
+var<workgroup> groupCount: atomic<u32>;
+
+// The readout's "Non-empty cells": each 8×8 group sums its own cells, then adds once to the total.
+@compute @workgroup_size(8, 8)
+fn countNonEmpty(@builtin(global_invocation_id) id: vec3<u32>, @builtin(local_invocation_index) li: u32) {
+  // No early return: every thread must reach the barrier.
+  if (id.x < params.width && id.y < params.height && (cells[id.y * params.width + id.x] & MATERIAL_MASK) != MAT_EMPTY) {
+    atomicAdd(&groupCount, 1u);
+  }
+  workgroupBarrier();
+  if (li == 0u) {
+    atomicAdd(&nonEmpty, atomicLoad(&groupCount));
+  }
+}
 
 // Twin of the processed-flag reset in Grid.beginTick. 2-D so a 4K grid stays under the 65,535 workgroups-per-dimension limit.
 @compute @workgroup_size(8, 8)

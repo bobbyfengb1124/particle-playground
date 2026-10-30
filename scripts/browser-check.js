@@ -14,6 +14,11 @@
 // dissolves a wood block it's dropped onto, consuming itself in the
 // process), and Step 10 (a seed dropped near water grows into a stalk over
 // a few seconds).
+//
+// Since Step 17e every check runs twice, on `?backend=cpu` then
+// `?backend=gpu`. The GPU pass needs a real GPU: SwiftShader (software
+// WebGPU, fine for `npm run test:gpu`) runs the full page at ~1 FPS, too slow
+// for the timed steps, so with no usable GPU the pass fails its readout check.
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -21,43 +26,55 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const baseUrl = process.env.BASE_URL ?? "http://localhost:5173";
-const shotDir = path.join(__dirname, "..", "screenshots");
-mkdirSync(shotDir, { recursive: true });
 
-let shotIndex = 0;
-async function shot(page, name) {
-  shotIndex++;
-  const file = path.join(shotDir, `${String(shotIndex).padStart(2, "0")}-${name}.png`);
-  await page.screenshot({ path: file });
-  console.log("screenshot:", file);
+async function waitForReadout(page, pattern) {
+  await page.waitForFunction(
+    (source) => {
+      const el = document.querySelector("#readout");
+      return el && new RegExp(source).test(el.textContent ?? "");
+    },
+    pattern.source,
+    { timeout: 2000 },
+  );
 }
 
-(async () => {
-  const browser = await chromium.launch();
+// Returns the error messages collected during the pass (console errors + failed checks).
+async function runCheck(browser, backend) {
+  const log = (...args) => console.log(`[${backend}]`, ...args);
+  const shotDir = path.join(__dirname, "..", "screenshots", backend);
+  mkdirSync(shotDir, { recursive: true });
+  let shotIndex = 0;
+  async function shot(page, name) {
+    shotIndex++;
+    const file = path.join(shotDir, `${String(shotIndex).padStart(2, "0")}-${name}.png`);
+    await page.screenshot({ path: file });
+    log("screenshot:", file);
+  }
+
   const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
   const errors = [];
   page.on("console", (msg) => {
-    if (msg.type() === "error") errors.push(msg.text());
+    if (msg.type() === "error") errors.push(`${msg.text()} (${msg.location().url})`); // the URL names which resource failed
   });
   page.on("pageerror", (err) => errors.push(String(err)));
 
-  await page.goto(baseUrl);
+  await page.goto(`${baseUrl}/?backend=${backend}`);
   await page.waitForSelector("#scene");
   await page.waitForSelector("#palette button");
   await shot(page, "initial");
 
   // Step 8 — readout: appears top-right, formatted as expected, particle
-  // count reacts to the sim (checked again mid-firework below).
-  const readoutPattern = /^FPS: \d+ \| Particles: \d+ \| Active cells: \d+ \| Brush: \d+$/;
-  await page.waitForFunction(
-    (pattern) => {
-      const el = document.querySelector("#readout");
-      return el && new RegExp(pattern).test(el.textContent ?? "");
-    },
-    readoutPattern.source,
-    { timeout: 2000 },
+  // count reacts to the sim (checked again mid-firework below). Naming the
+  // backend catches a GPU pass that silently fell back to CPU.
+  await waitForReadout(
+    page,
+    new RegExp(
+      `^Backend: ${backend} · [124] px \\| FPS: \\d+ \\| Particles: \\d+ \\| (Active|Non-empty) cells: \\d+( \\| GPU: .+)? \\| Brush: \\d+$`,
+    ),
   );
-  console.log("readout text:", await page.locator("#readout").textContent());
+  // Step 17e — the GPU timer shows real numbers (timestamp-query is available headless).
+  if (backend === "gpu") await waitForReadout(page, /GPU: sim \d+\.\d ms · draw \d+\.\d ms/);
+  log("readout text:", await page.locator("#readout").textContent());
   await shot(page, "readout-visible");
 
   const canvas = page.locator("#scene");
@@ -175,7 +192,7 @@ async function shot(page, name) {
   await page.click("button:has-text('Pause')");
   await shot(page, "paused-label");
   const pausedLabel = await page.locator("#overlay button", { hasText: "Resume" }).count();
-  console.log("pause button now says Resume:", pausedLabel === 1);
+  log("pause button now says Resume:", pausedLabel === 1);
 
   // While paused, paint a fresh sand column mid-air and confirm it does NOT fall.
   await page.click("#palette button:has-text('sand')");
@@ -214,7 +231,7 @@ async function shot(page, name) {
     if (pattern === "Ring") {
       const readoutText = await page.locator("#readout").textContent();
       const particles = Number(readoutText?.match(/Particles: (\d+)/)?.[1] ?? 0);
-      console.log("readout during ring burst:", readoutText, "-> particles > 0:", particles > 0);
+      log("readout during ring burst:", readoutText, "-> particles > 0:", particles > 0);
     }
     await page.waitForTimeout(900); // let embers fall/droop/split further
     await shot(page, `firework-${pattern.toLowerCase()}-falling`);
@@ -273,21 +290,30 @@ async function shot(page, name) {
   async function haloPixel() {
     await page.waitForTimeout(100); // a few frames so render() picks up the change
     // 6 cells left of center = 3 cells past the block's left edge, inside the glow's reach.
-    return page.evaluate(
-      ([x, y]) => Array.from(document.querySelector("#scene").getContext("2d").getImageData(x, y, 1, 1).data),
-      [fireX - 24, fireY],
-    );
+    // Read from a screenshot: on the GPU, #scene is a WebGPU canvas with no 2D context.
+    const png = await page.screenshot({ clip: { x: box.x + fireX - 24, y: box.y + fireY, width: 1, height: 1 } });
+    return page.evaluate(async (base64) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${base64}`;
+      await img.decode();
+      const ctx = document.createElement("canvas").getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+    }, png.toString("base64"));
   }
 
+  // #scene's background is #000, so on screen "no halo" is exactly black.
+  const glows = (p) => p[0] > p[2] && p[0] + p[1] + p[2] > 0;
+  const black = (p) => p[0] === 0 && p[1] === 0 && p[2] === 0;
   const litPixel = await haloPixel();
   await shot(page, "lighting-on-fire-halo");
   await page.uncheck("#lighting-toggle");
   const unlitPixel = await haloPixel();
   await shot(page, "lighting-off-no-halo");
-  console.log("halo pixel lit:", JSON.stringify(litPixel), "-> glows:", litPixel[3] > 0 && litPixel[0] > litPixel[2]);
-  console.log("halo pixel unlit:", JSON.stringify(unlitPixel), "-> transparent:", unlitPixel[3] === 0);
-  if (!(litPixel[3] > 0 && litPixel[0] > litPixel[2])) errors.push("lighting: no warm halo beside fire");
-  if (unlitPixel[3] !== 0) errors.push("lighting: halo still drawn with Lighting off");
+  log("halo pixel lit:", JSON.stringify(litPixel), "-> glows:", glows(litPixel));
+  log("halo pixel unlit:", JSON.stringify(unlitPixel), "-> black:", black(unlitPixel));
+  if (!glows(litPixel)) errors.push("lighting: no warm halo beside fire");
+  if (!black(unlitPixel)) errors.push("lighting: halo still drawn with Lighting off");
   await page.check("#lighting-toggle");
   await page.click("button:has-text('Resume')");
 
@@ -295,9 +321,21 @@ async function shot(page, name) {
   await page.click("button:has-text('Clear')");
   await shot(page, "cleared");
 
-  console.log("console errors:", JSON.stringify(errors));
+  log("console errors:", JSON.stringify(errors));
+  await page.close();
+  return errors.map((e) => `[${backend}] ${e}`);
+}
+
+(async () => {
+  // Full Chromium: Playwright's default headless shell has no WebGPU.
+  const browser = await chromium.launch({ channel: "chromium", args: ["--enable-unsafe-webgpu"] });
+  const errors = [];
+  for (const backend of ["cpu", "gpu"]) errors.push(...(await runCheck(browser, backend)));
   await browser.close();
-  if (errors.length > 0) process.exit(1);
+  if (errors.length > 0) {
+    console.error("FAILED:", JSON.stringify(errors));
+    process.exit(1);
+  }
 })().catch((err) => {
   console.error(err);
   process.exit(1);

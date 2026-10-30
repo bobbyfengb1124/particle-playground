@@ -29,18 +29,27 @@ const showBanner = (text: string): void => {
 };
 
 const launch = readLaunchOptions(location.search);
+const createGpu = (allowFallback: boolean): Promise<GpuBackend | null> =>
+  GpuBackend.create({
+    width: canvas.width,
+    height: canvas.height,
+    cellSize: launch.cellSize ?? 1,
+    seed: 1,
+    canvas,
+    allowFallback,
+    gravity: DEFAULT_GRAVITY,
+  });
+// Explicit ?backend=gpu accepts a software adapter and lets startup errors throw;
+// auto skips software adapters and falls back to CPU if the GPU fails to start.
 const gpuBackend =
   launch.backend === "gpu"
-    ? await GpuBackend.create({
-        width: canvas.width,
-        height: canvas.height,
-        cellSize: launch.cellSize ?? 1,
-        seed: 1,
-        canvas,
-        allowFallback: true,
-        gravity: DEFAULT_GRAVITY,
-      })
-    : null;
+    ? await createGpu(true)
+    : launch.backend === "auto"
+      ? await createGpu(false).catch((err: unknown) => {
+          console.error("GPU backend failed to start; falling back to CPU", err);
+          return null;
+        })
+      : null;
 if (launch.backend === "gpu" && !gpuBackend) showBanner("WebGPU unavailable — running on CPU");
 
 const backend: SimBackend =

@@ -16,3 +16,13 @@ const FLAG_BEHAVIOR_FLAG: u32 = 1u << 8u; // strobe visible / crossette already 
 const FLAG_COLOR_SHIFT: u32 = 12u;    // FireworkColor, bits 12-15
 const FLAG_DENSITY_SHIFT: u32 = 16u;  // log2(burst density) 0..6, bits 16-19
 const FLAG_ALIVE: u32 = 1u << 31u;
+
+// Same check as ParticleRenderer's early return: dead slots and strobe embers in their off moment aren't drawn
+// (particleDraw.wgsl) and give no light (lighting.wgsl, like LightMap.build).
+fn isVisible(p: Particle) -> bool {
+  if ((p.flags & FLAG_ALIVE) == 0u) { return false; }
+  let kind = (p.flags >> FLAG_KIND_SHIFT) & 0xfu;
+  let behavior = (p.flags >> FLAG_BEHAVIOR_SHIFT) & 0xfu;
+  let strobeOff = kind == KIND_EMBER && behavior == EMBER_STROBE && (p.flags & FLAG_BEHAVIOR_FLAG) == 0u;
+  return !strobeOff;
+}

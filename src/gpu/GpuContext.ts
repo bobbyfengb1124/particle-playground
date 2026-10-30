@@ -4,7 +4,7 @@ export interface GpuHandle {
 }
 
 export interface RequestGpuOptions {
-  /** Accept a software (fallback) adapter such as SwiftShader. Explicit `?backend=gpu` and the GPU tests allow it; auto-select (17e) won't. */
+  /** Accept a software (fallback) adapter such as SwiftShader. Explicit `?backend=gpu` and the GPU tests allow it; auto-select doesn't. */
   allowFallback: boolean;
 }
 
@@ -12,10 +12,12 @@ export interface RequestGpuOptions {
 export async function requestGpu(opts: RequestGpuOptions): Promise<GpuHandle | null> {
   if (typeof navigator === "undefined" || !navigator.gpu) return null;
   try {
-    const adapter = await navigator.gpu.requestAdapter();
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" }); // the discrete GPU on dual-GPU laptops
     if (!adapter) return null;
     if (adapter.info.isFallbackAdapter && !opts.allowFallback) return null;
-    const device = await adapter.requestDevice();
+    // timestamp-query is optional: GpuTimer reads "n/a" without it (Q7).
+    const requiredFeatures: GPUFeatureName[] = adapter.features.has("timestamp-query") ? ["timestamp-query"] : [];
+    const device = await adapter.requestDevice({ requiredFeatures });
     return { adapter, device };
   } catch {
     return null;

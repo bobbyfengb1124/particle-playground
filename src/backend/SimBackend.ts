@@ -1,4 +1,5 @@
 import type { FireworkColorValue, FireworkPatternValue } from "../core/types";
+import type { GpuMs } from "../gpu/GpuTimer";
 import type { MaterialIdValue } from "../grid/materials";
 import type { SceneData } from "../grid/scene";
 import type { WindZone } from "../wind/WindField";
@@ -7,7 +8,10 @@ export type BackendKind = "cpu" | "gpu";
 
 export interface BackendStats {
   particleCount: number;
+  /** CPU: awake cells (the active set). GPU: non-empty cells, since it scans every cell and has no active set. */
   activeCellCount: number;
+  /** GPU only: average ms per frame since the last call, or null without timestamp-query ("GPU: n/a"). Absent on CPU. */
+  gpuMs?: GpuMs | null;
 }
 
 /**

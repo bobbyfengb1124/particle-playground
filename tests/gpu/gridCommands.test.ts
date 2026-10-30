@@ -10,6 +10,30 @@ beforeAll(async () => {
 });
 afterAll(() => device?.destroy());
 
+describe("GpuGrid nonEmptyCount", () => {
+  it("counts non-empty cells on the first step() and every 15th after", async () => {
+    // 97×65 isn't a multiple of 8, so edge workgroups have threads outside the grid.
+    const grid = await GpuGrid.create(device, 97, 65, 1);
+    const material = new Uint8Array(97 * 65).fill(Material.STONE);
+    for (let i = 0; i < 100; i++) material[i * 61] = Material.EMPTY;
+    await gpuChecked(device, async () => {
+      grid.upload(material, new Uint16Array(material.length));
+      grid.step(); // call 0: counted
+      await grid.readback(); // waits on the GPU, so the count read (queued first) has landed
+      expect(grid.nonEmptyCount).toBe(97 * 65 - 100);
+
+      grid.clear();
+      for (let call = 1; call < 15; call++) grid.step();
+      await grid.readback();
+      expect(grid.nonEmptyCount, "calls 1–14 don't recount").toBe(97 * 65 - 100);
+      grid.step(); // call 15: counted
+      await grid.readback();
+      expect(grid.nonEmptyCount).toBe(0);
+    });
+    grid.destroy();
+  });
+});
+
 describe("GpuGrid upload, readback and clear", () => {
   it("starts empty", async () => {
     const grid = await gpuChecked(device, () => GpuGrid.create(device, 97, 65, 1));

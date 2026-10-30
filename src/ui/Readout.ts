@@ -17,8 +17,12 @@ export function createReadout(container: HTMLElement, sim: Simulation): { tick()
   const frameTimes: number[] = [];
   let lastDomUpdate = 0;
   const backendLabel = `Backend: ${sim.backend.kind} · ${sim.backend.cellSize} px`;
+  // The GPU has no active set, so it reports non-empty cells instead (BackendStats.activeCellCount).
+  const cellsLabel = sim.backend.kind === "gpu" ? "Non-empty cells" : "Active cells";
+  const initial = sim.getStats();
+  const initialGpu = initial.gpuMs === undefined ? "" : ` | GPU: ${initial.gpuMs ? "—" : "n/a"}`;
 
-  container.textContent = `${backendLabel} | FPS: — | Particles: 0 | Active cells: 0 | Brush: ${sim.getStats().brushSize}`;
+  container.textContent = `${backendLabel} | FPS: — | Particles: 0 | ${cellsLabel}: 0${initialGpu} | Brush: ${initial.brushSize}`;
 
   return {
     tick(): void {
@@ -31,8 +35,10 @@ export function createReadout(container: HTMLElement, sim: Simulation): { tick()
 
       const windowSeconds = Math.min(now, FPS_WINDOW_MS) / 1000;
       const fps = windowSeconds > 0 ? Math.round(frameTimes.length / windowSeconds) : 0;
-      const { particleCount, activeCellCount, brushSize } = sim.getStats();
-      container.textContent = `${backendLabel} | FPS: ${fps} | Particles: ${particleCount} | Active cells: ${activeCellCount} | Brush: ${brushSize}`;
+      const { particleCount, activeCellCount, brushSize, gpuMs } = sim.getStats();
+      const gpu =
+        gpuMs === undefined ? "" : ` | GPU: ${gpuMs ? `sim ${gpuMs.sim.toFixed(1)} ms · draw ${gpuMs.draw.toFixed(1)} ms` : "n/a"}`;
+      container.textContent = `${backendLabel} | FPS: ${fps} | Particles: ${particleCount} | ${cellsLabel}: ${activeCellCount}${gpu} | Brush: ${brushSize}`;
     },
   };
 }

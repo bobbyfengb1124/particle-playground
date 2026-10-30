@@ -3,25 +3,25 @@ import type { Grid } from "../grid/Grid";
 import { Material } from "../grid/materials";
 import type { ParticleSystem } from "../particles/ParticleSystem";
 
-const FIRE_LIGHT: readonly [number, number, number] = [255, 140, 50]; // warm orange, per fire cell before blurring
-const FIRE_INTENSITY = 1;
+export const FIRE_LIGHT: readonly [number, number, number] = [255, 140, 50]; // warm orange, per fire cell before blurring
+export const FIRE_INTENSITY = 1;
 // Embers/rockets are single-cell sources, so they need a much bigger splat
 // than fire (which usually comes in blocks) to show after the blur spreads
 // them over ~13x13 cells.
-const PARTICLE_INTENSITY = 12;
+export const PARTICLE_INTENSITY = 12;
 
 /** Box-blur radius in cells; two passes make a triangle falloff reaching 2 * BLUR_RADIUS cells (~24px at 4px cells). */
 export const BLUR_RADIUS = 3;
-const BLUR_PASSES = 2;
+export const BLUR_PASSES = 2;
 
-const FLICKER_PERIOD_FRAMES = 8; // ticks between flicker noise keyframes (~0.13s at 60Hz)
+export const FLICKER_PERIOD_FRAMES = 8; // ticks between flicker noise keyframes (~0.13s at 60Hz)
 export const FLICKER_MIN = 0.85;
 export const FLICKER_MAX = 1.15;
 
 /** How strongly light brightens a non-empty cell's own colour (additive, then clamped). */
-const LIT_GAIN = 0.6;
+export const LIT_GAIN = 0.6;
 /** Empty-cell halo alpha per unit of the light's brightest channel, and its cap (0-255). */
-const HALO_GAIN = 0.8;
+export const HALO_GAIN = 0.8;
 export const HALO_MAX_ALPHA = 140;
 
 /** Same (a, b) always gives the same random-looking float in [0, 1) — a stateless lookup, unlike Rng's stream. */

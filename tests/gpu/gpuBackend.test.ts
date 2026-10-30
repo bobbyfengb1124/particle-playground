@@ -61,7 +61,21 @@ it("tick steps the grid: a lone sand cell at 4 px falls one cell", async () => {
   const { material, width } = await gpu.exportCells();
   expect(material[5 * width + 10]).toBe(Material.EMPTY);
   expect(material[6 * width + 10]).toBe(Material.SAND);
-  expect(gpu.getStats()).toEqual({ particleCount: 0, activeCellCount: 0 });
+});
+
+it("getStats reports non-empty cells and the GPU ms split", async () => {
+  const gpu = await gpuBackend(4);
+  gpu.paintBrush(10, 5, 1, Material.STONE); // a 3×3 square: 9 cells that never move
+  gpu.tick(1 / 60, 0); // the first step() call counts
+  gpu.renderScene(true, 0);
+  await gpu.exportCells(); // waits on the GPU, so the count and timer reads (queued earlier) have landed
+  const stats = gpu.getStats();
+  expect(stats.particleCount).toBe(0);
+  expect(stats.activeCellCount).toBe(9);
+  // The test device (SwiftShader) supports timestamp-query; on one that doesn't, this is null ("GPU: n/a").
+  expect(stats.gpuMs).not.toBeNull();
+  expect(stats.gpuMs?.sim).toBeGreaterThanOrEqual(0);
+  expect(stats.gpuMs?.draw).toBeGreaterThan(0);
 });
 
 /** Paints one smoke cell at (30, 30) on the 4 px grid, ticks 10 times, and returns the column it ended up in. */

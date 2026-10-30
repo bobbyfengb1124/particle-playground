@@ -17,6 +17,18 @@ import {
 } from "../../particles/fireworks";
 import { STEAM_REVERT_TICKS } from "../../grid/rules/steam";
 import { REFERENCE_CELL_SIZE } from "../../grid/scene";
+import {
+  BLUR_RADIUS,
+  FIRE_INTENSITY,
+  FIRE_LIGHT,
+  FLICKER_MAX,
+  FLICKER_MIN,
+  FLICKER_PERIOD_FRAMES,
+  HALO_GAIN,
+  HALO_MAX_ALPHA,
+  LIT_GAIN,
+  PARTICLE_INTENSITY,
+} from "../../lighting/LightMap";
 import { ZONE_WIND_MAX } from "../../wind/WindField";
 
 /** Packed cell layout, shared by the WGSL (via buildPrelude) and GpuGrid's upload/readback: material bits 0-7, PROCESSED bit 8, timer bits 16-31. */
@@ -104,6 +116,21 @@ export function buildPrelude(): string {
     `const MAX_STAGE: u32 = ${MAX_STAGE}u;`,
     `const ZONE_WIND_MAX: i32 = ${ZONE_WIND_MAX};`,
     `const REFERENCE_CELL_SIZE: u32 = ${REFERENCE_CELL_SIZE}u;`,
+  );
+
+  lines.push(
+    "",
+    "// Lighting, mirroring the LightMap.ts constants.",
+    `const FIRE_LIGHT: vec3<f32> = vec3<f32>(${FIRE_LIGHT.join(", ")});`,
+    `const FIRE_INTENSITY: f32 = ${FIRE_INTENSITY};`,
+    `const PARTICLE_INTENSITY: f32 = ${PARTICLE_INTENSITY};`,
+    `const BLUR_RADIUS: i32 = ${BLUR_RADIUS};`,
+    `const FLICKER_PERIOD_FRAMES: u32 = ${FLICKER_PERIOD_FRAMES}u;`,
+    `const FLICKER_MIN: f32 = ${FLICKER_MIN};`,
+    `const FLICKER_MAX: f32 = ${FLICKER_MAX};`,
+    `const LIT_GAIN: f32 = ${LIT_GAIN};`,
+    `const HALO_GAIN: f32 = ${HALO_GAIN};`,
+    `const HALO_MAX_ALPHA: f32 = ${HALO_MAX_ALPHA};`,
   );
 
   lines.push(

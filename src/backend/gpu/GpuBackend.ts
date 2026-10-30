@@ -2,8 +2,10 @@ import { deriveSeed } from "../../core/Rng";
 import { type FireworkColorValue, type FireworkPatternValue, ParticleKind } from "../../core/types";
 import { onDeviceLost, requestGpu } from "../../gpu/GpuContext";
 import { brushStamp, GpuGrid, type Stamp } from "../../gpu/GpuGrid";
+import { GpuLighting } from "../../gpu/GpuLighting";
 import { GpuParticles, packFlags } from "../../gpu/GpuParticles";
 import { GpuRenderer } from "../../gpu/GpuRenderer";
+import { GpuTimer } from "../../gpu/GpuTimer";
 import type { MaterialIdValue } from "../../grid/materials";
 import { REFERENCE_CELL_SIZE, type SceneData } from "../../grid/scene";
 import { WindField, type WindZone } from "../../wind/WindField";
@@ -24,9 +26,9 @@ export interface GpuBackendOptions {
 }
 
 /**
- * The WebGPU engine: GpuGrid steps the cells, GpuParticles steps generic particles and
- * GpuRenderer draws the cells. Every grid material has a GPU rule, and gas follows wind
- * zones and the wind slider; particle drawing, rockets and lighting are still no-ops (17d, 17e).
+ * The WebGPU engine: GpuGrid steps the cells, GpuParticles steps particles and fireworks,
+ * GpuLighting builds the light map and GpuRenderer draws cells and particles. Every grid
+ * material has a GPU rule, and gas follows wind zones and the wind slider.
  */
 export class GpuBackend implements SimBackend {
   readonly kind = "gpu";
@@ -40,7 +42,9 @@ export class GpuBackend implements SimBackend {
     private readonly device: GPUDevice,
     private readonly grid: GpuGrid,
     private readonly particles: GpuParticles,
+    private readonly lighting: GpuLighting,
     private readonly renderer: GpuRenderer,
+    private readonly timer: GpuTimer | null, // null without timestamp-query
     cellSize: number,
   ) {
     this.cellSize = cellSize;
@@ -56,7 +60,9 @@ export class GpuBackend implements SimBackend {
     if (!gpu) return null;
     const gridWidth = Math.max(1, Math.floor(opts.width / opts.cellSize));
     const gridHeight = Math.max(1, Math.floor(opts.height / opts.cellSize));
-    const grid = await GpuGrid.create(gpu.device, gridWidth, gridHeight, opts.seed, REFERENCE_CELL_SIZE / opts.cellSize);
+    const timer = GpuTimer.create(gpu.device);
+    const timed = timer ?? undefined;
+    const grid = await GpuGrid.create(gpu.device, gridWidth, gridHeight, opts.seed, REFERENCE_CELL_SIZE / opts.cellSize, timed);
     const particles = await GpuParticles.create(gpu.device, grid, {
       capacity: GPU_PARTICLE_CAPACITY,
       seed: deriveSeed(opts.seed, 1),
@@ -64,9 +70,11 @@ export class GpuBackend implements SimBackend {
       width: opts.width,
       height: opts.height,
       gravity: opts.gravity,
+      timer: timed,
     });
-    const renderer = await GpuRenderer.create(gpu.device, opts.canvas, grid, opts.cellSize, particles);
-    return new GpuBackend(gpu.device, grid, particles, renderer, opts.cellSize);
+    const lighting = await GpuLighting.create(gpu.device, grid, particles, opts.width, opts.height, opts.cellSize, timed);
+    const renderer = await GpuRenderer.create(gpu.device, opts.canvas, grid, opts.cellSize, particles, lighting, timed);
+    return new GpuBackend(gpu.device, grid, particles, lighting, renderer, timer, opts.cellSize);
   }
 
   /** Calls `cb` if the GPU goes away mid-session (driver reset, GPU process crash). */
@@ -94,10 +102,12 @@ export class GpuBackend implements SimBackend {
     this.grid.step(this.tickScale, globalWind);
   }
 
-  /** Lighting is ignored until 17e. Flushing here too makes painting show up while paused, when tick() doesn't run. */
-  renderScene(_lighting: boolean, _frame: number): void {
+  /** Lighting off skips the light passes entirely. Flushing here too makes painting show up while paused, when tick() doesn't run. */
+  renderScene(lighting: boolean, frame: number): void {
     this.flushStamps();
-    this.renderer.draw();
+    if (lighting) this.lighting.build(frame);
+    this.renderer.draw(lighting);
+    this.timer?.endFrame(); // a frame is everything since the last render: its ticks, paints, light build and draw
   }
 
   private flushStamps(): void {
@@ -123,9 +133,16 @@ export class GpuBackend implements SimBackend {
     this.grid.setZoneWind(this.windField.values);
   }
 
-  /** particleCount is up to 15 ticks stale (the periodic alive readback). No active-cell tracking: the GPU scans every cell each pass. */
+  /**
+   * Both counts are up to 15 ticks stale (periodic readbacks). activeCellCount is non-empty cells: the GPU
+   * scans every cell, so it has no active set. Each call starts a new GPU ms averaging window.
+   */
   getStats(): BackendStats {
-    return { particleCount: this.particles.aliveCount, activeCellCount: 0 };
+    return {
+      particleCount: this.particles.aliveCount,
+      activeCellCount: this.grid.nonEmptyCount,
+      gpuMs: this.timer ? this.timer.takeMs() : null,
+    };
   }
 
   /** Flushes queued stamps first, so a Save straight after painting includes them. Same shape as serializeScene's output. */

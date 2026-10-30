@@ -1,5 +1,6 @@
 import { compileShader } from "./GpuContext";
 import type { GpuGrid } from "./GpuGrid";
+import type { GpuTimer } from "./GpuTimer";
 import { buildPrelude } from "./shaders/prelude";
 import rngWgsl from "./shaders/rng.wgsl?raw";
 import particleTypesWgsl from "./shaders/particleTypes.wgsl?raw";
@@ -54,6 +55,7 @@ export interface GpuParticlesOptions {
   width: number; // canvas px
   height: number;
   gravity: number; // px/s²
+  timer?: GpuTimer; // times the tick pass as "sim"; the app passes one, tests don't
 }
 
 /** The GPU twin of ParticleSystem: particle slots, a free stack and spawn requests, stepped by particles.wgsl. */
@@ -104,7 +106,7 @@ export class GpuParticles {
     device.queue.writeBuffer(buffers.params, 0, this.paramsData(dt, globalWind));
 
     const encoder = device.createCommandEncoder({ label: "particles.tick" });
-    const compute = encoder.beginComputePass({ label: "particles.tick" });
+    const compute = encoder.beginComputePass({ label: "particles.tick", timestampWrites: this.opts.timer?.writes("sim") });
     compute.setBindGroup(0, this.mainGroup);
     compute.setPipeline(this.pipelines.update);
     compute.dispatchWorkgroups(Math.ceil(this.opts.capacity / 64));

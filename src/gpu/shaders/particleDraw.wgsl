@@ -18,15 +18,6 @@ struct Corner {
   @location(3) color: vec4<f32>, // already multiplied by alpha
 }
 
-// Same check as ParticleRenderer's early return: dead slots and strobe embers in their off moment aren't drawn.
-fn isVisible(p: Particle) -> bool {
-  if ((p.flags & FLAG_ALIVE) == 0u) { return false; }
-  let kind = (p.flags >> FLAG_KIND_SHIFT) & 0xfu;
-  let behavior = (p.flags >> FLAG_BEHAVIOR_SHIFT) & 0xfu;
-  let strobeOff = kind == KIND_EMBER && behavior == EMBER_STROBE && (p.flags & FLAG_BEHAVIOR_FLAG) == 0u;
-  return !strobeOff;
-}
-
 @vertex
 fn vs(@builtin(vertex_index) corner: u32, @builtin(instance_index) slot: u32) -> Corner {
   var out: Corner;

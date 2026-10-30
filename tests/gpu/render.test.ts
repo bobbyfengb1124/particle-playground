@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CpuBackend } from "../../src/backend/cpu/CpuBackend";
 import { GpuGrid } from "../../src/gpu/GpuGrid";
+import { GpuLighting } from "../../src/gpu/GpuLighting";
+import { GpuParticles } from "../../src/gpu/GpuParticles";
 import { GpuRenderer } from "../../src/gpu/GpuRenderer";
+import { Material } from "../../src/grid/materials";
 import { gpuChecked, sampleCells, testDevice } from "./helpers";
 
 let device: GPUDevice;
@@ -65,5 +68,74 @@ describe.each([1, 4])("GpuRenderer matches GridRenderer (no lighting) at cellSiz
 
     expect(describePixelMismatch(pixelsOf(cpuCanvas), gpuPixels, width)).toBe("");
     grid.destroy();
+  });
+});
+
+/**
+ * "" if every pixel matches within 1 step of alpha and 2 steps of premultiplied colour (the light map's
+ * fixed-point rounding, plus getImageData un-premultiplying faint halos); otherwise the count and worst pixel.
+ */
+function describeLitMismatch(cpu: Uint8ClampedArray, gpu: Uint8ClampedArray, width: number): string {
+  let count = 0;
+  let worst = 0;
+  let at = -1;
+  for (let i = 0; i < cpu.length; i += 4) {
+    let diff = Math.abs(cpu[i + 3] - gpu[i + 3]) * 2;
+    for (let c = 0; c < 3; c++) {
+      diff = Math.max(diff, Math.abs(cpu[i + c] * cpu[i + 3] - gpu[i + c] * gpu[i + 3]) / 255);
+    }
+    if (diff > 2) count++;
+    if (diff > worst) [worst, at] = [diff, i];
+  }
+  if (count === 0) return "";
+  const p = at / 4;
+  const rgba = (d: Uint8ClampedArray): string => `rgba(${d[at]}, ${d[at + 1]}, ${d[at + 2]}, ${d[at + 3]})`;
+  return `${count} pixels differ; worst at (${p % width}, ${Math.floor(p / width)}): CPU ${rgba(cpu)}, GPU ${rgba(gpu)}`;
+}
+
+describe("GpuRenderer with lighting", () => {
+  it("matches CpuBackend's lit frame at 4 px cells: tinted materials, halos on empty cells", async () => {
+    const [width, height, cellSize, frame] = [64, 48, 4, 37];
+    const [gridWidth, gridHeight] = [width / cellSize, height / cellSize];
+    const material = new Uint8Array(gridWidth * gridHeight);
+    const timer = new Uint16Array(material.length);
+    const set = (x: number, y: number, m: number): void => void (material[y * gridWidth + x] = m);
+    for (const [x, y] of [[5, 5], [6, 5], [0, 7], [15, 11]]) set(x, y, Material.FIRE); // edge and corner light partly falls off the map
+    for (let x = 3; x <= 9; x++) set(x, 7, Material.STONE);
+    for (let x = 7; x <= 9; x++) set(x, 6, Material.SAND);
+
+    const cpuCanvas = makeCanvas(width, height);
+    const cpu = new CpuBackend({ width, height, cellSize, seed: 1, particleCapacity: 1, gravity: 0, canvas: cpuCanvas });
+    cpu.grid.material.set(material);
+    cpu.renderScene(true, frame);
+    const cpuPixels = pixelsOf(cpuCanvas);
+
+    const gpuCanvas = makeCanvas(width, height);
+    const grid = await GpuGrid.create(device, gridWidth, gridHeight, 1);
+    const particles = await GpuParticles.create(device, grid, { capacity: 64, seed: 1, cellSize, width, height, gravity: 0 });
+    const lighting = await GpuLighting.create(device, grid, particles, width, height, cellSize);
+    const renderer = await gpuChecked(device, () => GpuRenderer.create(device, gpuCanvas, grid, cellSize, particles, lighting));
+    try {
+      grid.upload(material, timer);
+      lighting.build(frame);
+      renderer.draw(true);
+      const gpuPixels = pixelsOf(gpuCanvas);
+      expect(gpuPixels.some((v, i) => i % 4 === 3 && v > 0 && v < 255), "some empty cells carry a halo").toBe(true);
+      expect(describeLitMismatch(cpuPixels, gpuPixels, width)).toBe("");
+      const unevenCells = Array.from({ length: gridWidth * gridHeight }, (_, c) => c).filter((c) => {
+        const corner = ((Math.floor(c / gridWidth) * cellSize) * width + (c % gridWidth) * cellSize) * 4;
+        return Array.from({ length: cellSize * cellSize }, (_, k) => corner + (Math.floor(k / cellSize) * width + (k % cellSize)) * 4)
+          .some((o) => [0, 1, 2, 3].some((ch) => gpuPixels[o + ch] !== gpuPixels[corner + ch]));
+      });
+      expect(unevenCells, "light is read once per cell, so each cell is one flat colour").toEqual([]);
+
+      renderer.draw(false); // Lighting off with a light map present: plain palette, as on the CPU
+      cpu.renderScene(false, frame);
+      expect(describePixelMismatch(pixelsOf(cpuCanvas), pixelsOf(gpuCanvas), width)).toBe("");
+    } finally {
+      lighting.destroy();
+      particles.destroy();
+      grid.destroy();
+    }
   });
 });

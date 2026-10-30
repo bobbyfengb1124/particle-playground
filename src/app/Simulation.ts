@@ -1,6 +1,6 @@
 import { AppState, type InteractionMode } from "./AppState";
 import { CpuBackend } from "../backend/cpu/CpuBackend";
-import type { BackendKind, SimBackend } from "../backend/SimBackend";
+import type { BackendKind, BackendStats, SimBackend } from "../backend/SimBackend";
 import type { FireworkColorValue, FireworkPatternValue } from "../core/types";
 import type { Grid } from "../grid/Grid";
 import type { MaterialIdValue } from "../grid/materials";
@@ -271,7 +271,7 @@ export class Simulation {
   }
 
   /** Read-only snapshot for the on-screen readout — FPS is deliberately not here, since tick(dt) never reads the wall clock by design. */
-  getStats(): { particleCount: number; activeCellCount: number; brushSize: number } {
+  getStats(): BackendStats & { brushSize: number } {
     return { ...this.backend.getStats(), brushSize: this.appState.brushSize };
   }
 

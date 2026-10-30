@@ -2,14 +2,19 @@ import { describe, expect, it } from "vitest";
 import { readLaunchOptions } from "../../src/app/launchOptions";
 
 describe("readLaunchOptions", () => {
-  it("defaults to CPU with no cell size", () => {
-    expect(readLaunchOptions("")).toEqual({ backend: "cpu", cellSize: null });
+  it("defaults to auto with no cell size", () => {
+    expect(readLaunchOptions("")).toEqual({ backend: "auto", cellSize: null });
   });
 
-  it("selects the GPU only for an exact 'gpu'", () => {
+  it("forces a backend only for an exact 'cpu' or 'gpu'", () => {
     expect(readLaunchOptions("?backend=gpu").backend).toBe("gpu");
-    expect(readLaunchOptions("?backend=GPU").backend).toBe("cpu");
-    expect(readLaunchOptions("?backend=webgpu").backend).toBe("cpu");
+    expect(readLaunchOptions("?backend=cpu").backend).toBe("cpu");
+  });
+
+  it("treats an unknown backend like no param", () => {
+    for (const typo of ["?backend=GPU", "?backend=webgpu", "?backend="]) {
+      expect(readLaunchOptions(typo).backend).toBe("auto");
+    }
   });
 
   it("accepts cell sizes 1, 2 and 4, and ignores anything else", () => {
