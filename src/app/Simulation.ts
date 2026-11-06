@@ -1,6 +1,6 @@
 import { AppState, type InteractionMode } from "./AppState";
 import { CpuBackend } from "../backend/cpu/CpuBackend";
-import type { BackendKind, BackendStats, SimBackend } from "../backend/SimBackend";
+import type { BackendKind, BackendSoundEvents, BackendStats, SimBackend } from "../backend/SimBackend";
 import type { FireworkColorValue, FireworkPatternValue } from "../core/types";
 import type { Grid } from "../grid/Grid";
 import type { MaterialIdValue } from "../grid/materials";
@@ -47,6 +47,8 @@ export class Simulation {
   private zones: WindZone[] = [];
   /** The in-progress wind-zone drag (canvas pixels), drawn as a dashed preview until pointerup. */
   private zoneDraft: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /** Power (0..1) of each launch since the last takeSoundEvents(), for the whoosh (Step 18 Q7). */
+  private launchPowers: number[] = [];
 
   constructor(opts: SimulationOptions) {
     this.width = opts.width;
@@ -209,6 +211,14 @@ export class Simulation {
     this.appState.lightingEnabled = on;
   }
 
+  get soundEnabled(): boolean {
+    return this.appState.soundEnabled;
+  }
+
+  setSoundEnabled(on: boolean): void {
+    this.appState.soundEnabled = on;
+  }
+
   get lightTick(): number {
     return this.lightTickCount;
   }
@@ -261,7 +271,15 @@ export class Simulation {
     const power = Math.min(1, dragDistance / (this.height * FULL_POWER_DRAG_FRACTION));
     const targetHeight = this.height * (MIN_LAUNCH_HEIGHT_FRACTION + power * (MAX_LAUNCH_HEIGHT_FRACTION - MIN_LAUNCH_HEIGHT_FRACTION));
     const speed = Math.sqrt(2 * this.gravity * targetHeight);
-    this.backend.launchRocket(x0, y0, speed, this.appState.fireworkPattern, this.appState.fireworkColor, this.appState.burstDensity);
+    const launched = this.backend.launchRocket(x0, y0, speed, this.appState.fireworkPattern, this.appState.fireworkColor, this.appState.burstDensity);
+    if (launched && !this.paused) this.launchPowers.push(power); // no whoosh for a refused (Q13) or paused (Q6) launch
+  }
+
+  /** Everything the sound needs since the last call: launches recorded here, bursts and fire from the backend. Drains both, so only the sound update calls it. */
+  takeSoundEvents(): BackendSoundEvents & { launchPowers: number[] } {
+    const launchPowers = this.launchPowers;
+    this.launchPowers = [];
+    return { launchPowers, ...this.backend.takeSoundEvents() };
   }
 
   tick(dt: number): void {

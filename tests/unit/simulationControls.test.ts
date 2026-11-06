@@ -155,6 +155,15 @@ describe("Simulation controls", () => {
     expect(sim.lightingEnabled).toBe(true);
   });
 
+  it("sound defaults to on and the toggle round-trips", () => {
+    const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
+    expect(sim.soundEnabled).toBe(true);
+    sim.setSoundEnabled(false);
+    expect(sim.soundEnabled).toBe(false);
+    sim.setSoundEnabled(true);
+    expect(sim.soundEnabled).toBe(true);
+  });
+
   it("the flicker clock advances once per tick and freezes while paused", () => {
     const sim = new Simulation({ width: 40, height: 40, cellSize: 4 });
     runTicks(sim, 10);

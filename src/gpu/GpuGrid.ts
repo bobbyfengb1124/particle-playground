@@ -74,17 +74,17 @@ function createBuffers(device: GPUDevice, width: number, height: number) {
     size: (ZONE_WIND_MAX + 1) * 4,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
-  const nonEmpty = device.createBuffer({
-    label: "grid.nonEmpty",
-    size: 4,
+  const counts = device.createBuffer({
+    label: "grid.counts",
+    size: COUNTS_BYTES,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
   });
-  const nonEmptyRead = device.createBuffer({
-    label: "grid.nonEmptyRead",
-    size: 4,
+  const countsRead = device.createBuffer({
+    label: "grid.countsRead",
+    size: COUNTS_BYTES,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
   });
-  return { cells, params, stamps, zoneWind, windThreshold, nonEmpty, nonEmptyRead };
+  return { cells, params, stamps, zoneWind, windThreshold, counts, countsRead };
 }
 
 interface GridBuffers {
@@ -93,25 +93,28 @@ interface GridBuffers {
   stamps: GPUBuffer;
   zoneWind: GPUBuffer;
   windThreshold: GPUBuffer;
-  nonEmpty: GPUBuffer; // countNonEmpty's atomic total
-  nonEmptyRead: GPUBuffer; // its mappable copy for the readout
+  counts: GPUBuffer; // countCells' atomic totals: non-empty, fire
+  countsRead: GPUBuffer; // their mappable copy for the readout and the crackle
 }
 
 interface GridPipelines {
   clearProcessed: GPUComputePipeline;
   stepPass: GPUComputePipeline;
   paint: GPUComputePipeline;
-  countNonEmpty: GPUComputePipeline;
+  countCells: GPUComputePipeline;
 }
 
-/** Non-empty cell count every this many step() calls: ~250 ms at 60 ticks/s, as GpuParticles' ALIVE_READ_INTERVAL. */
+/** Non-empty and fire cell counts every this many step() calls: ~250 ms at 60 ticks/s, as GpuParticles' ALIVE_READ_INTERVAL. */
 const COUNT_READ_INTERVAL = 15;
+/** Two u32 totals, as `counts` in grid.wgsl. */
+const COUNTS_BYTES = 8;
 
 /** The GPU twin of Grid + PhasedStepper: a packed cell buffer stepped by the WGSL in shaders/. */
 export class GpuGrid {
   private tickCount = 0;
   private stepCalls = 0;
   private nonEmpty = 0;
+  private fireCells = 0;
   private countReadPending = false;
 
   private constructor(
@@ -129,6 +132,11 @@ export class GpuGrid {
   /** Non-empty cells as of the last count (the readout's GPU stand-in for active cells): up to ~250 ms old, 0 until the first lands. */
   get nonEmptyCount(): number {
     return this.nonEmpty;
+  }
+
+  /** FIRE cells as of the last count, for the crackle (Step 18 Q3): same timing as nonEmptyCount. */
+  get fireCellCount(): number {
+    return this.fireCells;
   }
 
   /** One packed u32 per cell (layout in prelude.ts); GpuRenderer reads it directly. */
@@ -178,7 +186,7 @@ export class GpuGrid {
 
     const countCells = this.stepCalls % COUNT_READ_INTERVAL === 0 && !this.countReadPending;
     const encoder = this.device.createCommandEncoder({ label: "grid.step" });
-    if (countCells) encoder.clearBuffer(this.buffers.nonEmpty);
+    if (countCells) encoder.clearBuffer(this.buffers.counts);
     const compute = encoder.beginComputePass({ label: "grid.step", timestampWrites: this.timer?.writes("sim") });
     for (let s = 0; s < count; s++) {
       compute.setPipeline(this.pipelines.clearProcessed);
@@ -192,12 +200,12 @@ export class GpuGrid {
       }
     }
     if (countCells) {
-      compute.setPipeline(this.pipelines.countNonEmpty);
+      compute.setPipeline(this.pipelines.countCells);
       compute.setBindGroup(0, this.bindGroup, [0]); // any slot: it only reads width and height
       compute.dispatchWorkgroups(cellGroupsX, cellGroupsY);
     }
     compute.end();
-    if (countCells) encoder.copyBufferToBuffer(this.buffers.nonEmpty, 0, this.buffers.nonEmptyRead, 0, 4);
+    if (countCells) encoder.copyBufferToBuffer(this.buffers.counts, 0, this.buffers.countsRead, 0, COUNTS_BYTES);
     this.device.queue.submit([encoder.finish()]);
     if (countCells) this.readCount();
     this.tickCount += count;
@@ -207,11 +215,11 @@ export class GpuGrid {
   /** Maps the count copy and caches it; GpuParticles.readAlive's recipe. A step that finds a read pending skips counting. */
   private readCount(): void {
     this.countReadPending = true;
-    const staging = this.buffers.nonEmptyRead;
+    const staging = this.buffers.countsRead;
     staging
       .mapAsync(GPUMapMode.READ)
       .then(() => {
-        this.nonEmpty = new Uint32Array(staging.getMappedRange())[0];
+        [this.nonEmpty, this.fireCells] = new Uint32Array(staging.getMappedRange());
         staging.unmap();
       })
       .catch(() => {}) // only rejects on device loss or destroy(); the device-lost banner already reports it
@@ -325,8 +333,8 @@ export class GpuGrid {
     this.buffers.stamps.destroy();
     this.buffers.zoneWind.destroy();
     this.buffers.windThreshold.destroy();
-    this.buffers.nonEmpty.destroy();
-    this.buffers.nonEmptyRead.destroy();
+    this.buffers.counts.destroy();
+    this.buffers.countsRead.destroy();
   }
 
   /** `scale` is 4 / cellSize (1, 2 or 4) — PhasedStepper's `scale` option; fixed for the grid's life. `timer` times step and paint passes as "sim". */
@@ -355,7 +363,7 @@ export class GpuGrid {
         { binding: 2, resource: { buffer: buffers.stamps } },
         { binding: 3, resource: { buffer: buffers.zoneWind } },
         { binding: 4, resource: { buffer: buffers.windThreshold } },
-        { binding: 5, resource: { buffer: buffers.nonEmpty } },
+        { binding: 5, resource: { buffer: buffers.counts } },
       ],
     });
     device.queue.writeBuffer(buffers.windThreshold, 0, windThresholdTable());
@@ -368,7 +376,7 @@ export class GpuGrid {
       clearProcessed: pipeline("clearProcessed"),
       stepPass: pipeline("stepPass"),
       paint: pipeline("paint"),
-      countNonEmpty: pipeline("countNonEmpty"),
+      countCells: pipeline("countCells"),
     }, bindGroup, timer);
   }
 }

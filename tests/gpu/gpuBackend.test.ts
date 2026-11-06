@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CpuBackend } from "../../src/backend/cpu/CpuBackend";
 import { GpuBackend } from "../../src/backend/gpu/GpuBackend";
 import type { SimBackend } from "../../src/backend/SimBackend";
+import { FireworkColor, FireworkPattern } from "../../src/core/types";
 import { Material } from "../../src/grid/materials";
 import { sampleCells } from "./helpers";
 
@@ -61,6 +62,25 @@ it("tick steps the grid: a lone sand cell at 4 px falls one cell", async () => {
   const { material, width } = await gpu.exportCells();
   expect(material[5 * width + 10]).toBe(Material.EMPTY);
   expect(material[6 * width + 10]).toBe(Material.SAND);
+});
+
+it("takeSoundEvents reports each burst once and the burning area in px² (Step 18)", async () => {
+  const gpu = await gpuBackend(4);
+  // Speed 0 with this helper's zero gravity: vy is -0, so the rocket is at its apex on its first update.
+  expect(gpu.launchRocket(100, 80, 0, FireworkPattern.RING, FireworkColor.GOLD, 1)).toBe(true);
+  gpu.paintBrush(10, 30, 1, Material.FIRE);
+  let bursts = 0;
+  for (let t = 0; t < 16; t++) {
+    gpu.tick(1 / 60, 0);
+    await gpu.exportCells(); // waits on the GPU, so this tick's burst read has landed
+    bursts += gpu.takeSoundEvents().bursts;
+  }
+  expect(bursts).toBe(1);
+
+  // The last tick was step() call 15, which recounts fire; nothing has stepped since, so the export matches that count.
+  const { material } = await gpu.exportCells();
+  const fireCells = material.filter((m) => m === Material.FIRE).length;
+  expect(gpu.takeSoundEvents().fireArea).toBe(fireCells * 4 * 4);
 });
 
 it("getStats reports non-empty cells and the GPU ms split", async () => {

@@ -131,6 +131,13 @@ export class Grid {
     return this.activeCurrent.size;
   }
 
+  /** How many cells hold `id`; a full scan, so callers throttle it. */
+  countMaterial(id: number): number {
+    let n = 0;
+    for (const m of this.material) if (m === id) n++;
+    return n;
+  }
+
   /** Called once at the start of each GridStepper tick. */
   beginTick(): void {
     this.processedThisTick.fill(0);

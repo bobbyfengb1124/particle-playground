@@ -20,4 +20,6 @@ export class AppState {
   burstDensity = 16;
   /** Whether render() runs the fire/ember glow pass. Drawing-only: the sim's state is identical either way. */
   lightingEnabled = true;
+  /** Step 18 Q4: the Sound checkbox. Sound-only: the sim's state is identical either way. */
+  soundEnabled = true;
 }

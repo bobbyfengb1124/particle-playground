@@ -180,6 +180,29 @@ describe("GpuParticles", () => {
     grid.destroy();
   });
 
+  it("burstCount counts apex bursts only, and the per-tick read catches up (Step 18 Q2)", async () => {
+    const { grid, particles } = await setup();
+    const back = await gpuChecked(device, () => {
+      particles.request(rocket(100, 90, FireworkPattern.RING, 0));
+      particles.request(rocket(160, 90, FireworkPattern.RING, 0));
+      particles.request(rocket(220, 90, FireworkPattern.CROSSETTE, 0));
+      particles.tick(DT, 0);
+      particles.tick(DT, 0); // all three burst
+      for (let t = 0; t < 48; t++) particles.tick(DT, 0); // past every crossette split, as in the test above
+      return particles.readback();
+    });
+    expect(back.burstCount).toBe(3); // 24 crossette splits happened too, but don't count
+
+    // The live getter lags by a frame or two: keep ticking until a read lands.
+    for (let t = 0; t < 20 && particles.burstCount !== 3; t++) {
+      particles.tick(DT, 0);
+      await device.queue.onSubmittedWorkDone();
+    }
+    expect(particles.burstCount).toBe(3);
+    particles.destroy();
+    grid.destroy();
+  });
+
   it("a low burst over wood sets whole 4×4 px blocks on fire, and embers that land are used up", async () => {
     const { grid, particles } = await setup();
     // Wood in the bottom 32 rows (y 148–179). 148 and W = 320 are multiples of 4, so every 4×4 block there is all wood.

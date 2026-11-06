@@ -46,10 +46,13 @@ function presetFor(color: number): FireworkColorPreset {
   return FIREWORK_COLOR_PRESETS[color] ?? FIREWORK_COLOR_PRESETS[0];
 }
 
-/** Spawns a rocket straight up from (x, y), tinted with its launch colour; it carries `pattern` in its behavior slot and `color` in fireworkColor until fireworks.ts reads them back at apex. */
-export function launchRocket(particles: ParticleSystem, x: number, y: number, speed: number, pattern: number, color: number): void {
+/**
+ * Spawns a rocket straight up from (x, y), tinted with its launch colour; it carries `pattern` in its behavior slot and `color` in fireworkColor until fireworks.ts reads them back at apex.
+ * Returns false if the pool is full and no rocket was spawned (Step 18 Q13: then there's no whoosh).
+ */
+export function launchRocket(particles: ParticleSystem, x: number, y: number, speed: number, pattern: number, color: number): boolean {
   const [colorR, colorG, colorB] = presetFor(color).swatch;
-  particles.spawn({
+  const rocket = particles.spawn({
     x,
     y,
     vx: 0,
@@ -64,6 +67,7 @@ export function launchRocket(particles: ParticleSystem, x: number, y: number, sp
     behavior: pattern,
     fireworkColor: color,
   });
+  return rocket !== null;
 }
 
 /** Same arithmetic as `range()` (lo + t * (hi - lo)) so GOLD matches the original output exactly. */
@@ -144,8 +148,10 @@ export function burst(particles: ParticleSystem, x: number, y: number, pattern: 
  * burst, strobe's flicker). All spawns/releases are deferred until after the
  * read-only scan, since acquiring/releasing pool slots mid-`forEachActive`
  * would skip or double-visit entries.
+ *
+ * Returns how many rockets burst this tick (crossette splits not counted), for the boom sound.
  */
-export function updateFireworkBehaviors(particles: ParticleSystem, dt: number, rng: Rng): void {
+export function updateFireworkBehaviors(particles: ParticleSystem, dt: number, rng: Rng): number {
   const rocketBursts: Array<{ x: number; y: number; pattern: number; color: number }> = [];
   const rocketsToRelease: Particle[] = [];
   const crossetteSplits: Array<{ x: number; y: number; vx: number; vy: number; color: number }> = [];
@@ -180,4 +186,5 @@ export function updateFireworkBehaviors(particles: ParticleSystem, dt: number, r
   }
   for (const rocket of rocketBursts) burst(particles, rocket.x, rocket.y, rocket.pattern, rocket.color, rng);
   for (const p of rocketsToRelease) particles.release(p);
+  return rocketBursts.length;
 }

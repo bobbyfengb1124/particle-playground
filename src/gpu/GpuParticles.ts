@@ -79,10 +79,17 @@ export class GpuParticles {
   private tickCount = 0;
   private alive = 0;
   private aliveReadPending = false;
+  private bursts = 0;
+  private burstReadPending = false;
 
   /** Alive particles as of the last readback (Q8): up to ~250 ms old, 0 until the first one lands. */
   get aliveCount(): number {
     return this.alive;
+  }
+
+  /** Apex bursts since creation, as of the last per-tick readback (Step 18 Q2): a frame or two behind. */
+  get burstCount(): number {
+    return this.bursts;
   }
 
   /** The slot buffer, for GpuRenderer's particle draw (read-only there). */
@@ -94,9 +101,11 @@ export class GpuParticles {
     return this.opts.capacity;
   }
 
-  /** Queued for the next tick's emit pass. Past MAX_REQUESTS in one tick they're dropped, like a refused spawn (Q3). */
-  request(r: ParticleRequest): void {
-    if (this.pending.length < MAX_REQUESTS) this.pending.push(r);
+  /** Queued for the next tick's emit pass. Past MAX_REQUESTS in one tick they're dropped, like a refused spawn (Q3), and this returns false. */
+  request(r: ParticleRequest): boolean {
+    if (this.pending.length >= MAX_REQUESTS) return false;
+    this.pending.push(r);
+    return true;
   }
 
   /** One sim tick, in Q5's order: update (forces, bounds, age, release), then emit this tick's requests, then ignite (embers landing on cells). */
@@ -121,8 +130,11 @@ export class GpuParticles {
 
     const readAlive = this.tickCount % ALIVE_READ_INTERVAL === 0 && !this.aliveReadPending;
     if (readAlive) encoder.copyBufferToBuffer(buffers.counters, 0, buffers.aliveRead, 0, 4); // freeTop
+    const readBursts = !this.burstReadPending;
+    if (readBursts) encoder.copyBufferToBuffer(buffers.counters, 8, buffers.burstRead, 0, 4); // burstCount
     device.queue.submit([encoder.finish()]);
     if (readAlive) this.readAlive();
+    if (readBursts) this.readBursts();
     this.tickCount++;
   }
 
@@ -132,11 +144,11 @@ export class GpuParticles {
   }
 
   /** Every alive slot, the free stack and freeTop, read back to the CPU. Waits on the GPU: tests only, never per frame. */
-  async readback(): Promise<{ alive: ParticleSnapshot[]; free: Uint32Array; freeTop: number }> {
+  async readback(): Promise<{ alive: ParticleSnapshot[]; free: Uint32Array; freeTop: number; burstCount: number }> {
     const { capacity } = this.opts;
     const state = await this.copyOut(this.buffers.particles);
     const stack = new Uint32Array(await this.copyOut(this.buffers.freeStack));
-    const freeTop = new Uint32Array(await this.copyOut(this.buffers.counters))[0];
+    const [freeTop, , burstCount] = new Uint32Array(await this.copyOut(this.buffers.counters));
 
     // Field positions follow struct Particle: x 0, y 1, vx 2, vy 3, age 4, lifespan 5, radius 6, color 11, flags 12.
     const f32 = new Float32Array(state);
@@ -148,7 +160,7 @@ export class GpuParticles {
       if ((flags & FLAG_ALIVE) === 0) continue;
       alive.push({ slot, x: f32[w], y: f32[w + 1], vx: f32[w + 2], vy: f32[w + 3], age: f32[w + 4], lifespan: f32[w + 5], radius: f32[w + 6], color: u32[w + 11], flags });
     }
-    return { alive, free: stack.slice(0, Math.min(freeTop, capacity)), freeTop };
+    return { alive, free: stack.slice(0, Math.min(freeTop, capacity)), freeTop, burstCount };
   }
 
   /** Copies a whole GPU buffer into a fresh ArrayBuffer (the GpuGrid.readback recipe). */
@@ -212,6 +224,22 @@ export class GpuParticles {
       });
   }
 
+  /** Maps the burstCount copy, like readAlive but every tick. Cumulative, so a skipped read loses no bursts. */
+  private readBursts(): void {
+    this.burstReadPending = true;
+    const staging = this.buffers.burstRead;
+    staging
+      .mapAsync(GPUMapMode.READ)
+      .then(() => {
+        this.bursts = new Uint32Array(staging.getMappedRange())[0];
+        staging.unmap();
+      })
+      .catch(() => {}) // only rejects on device loss or destroy(); the device-lost banner already reports it
+      .finally(() => {
+        this.burstReadPending = false;
+      });
+  }
+
   static async create(device: GPUDevice, grid: GpuGrid, opts: GpuParticlesOptions): Promise<GpuParticles> {
     const module = await compileShader(device, "particles", [buildPrelude(), rngWgsl, particleTypesWgsl, particlesWgsl].join("\n"));
     const buffers = createBuffers(device, opts.capacity);
@@ -219,7 +247,7 @@ export class GpuParticles {
     // Every slot starts free. Reversed so slot 0 is popped first, which makes buffer dumps easier to read.
     const free = Uint32Array.from({ length: opts.capacity }, (_, i) => opts.capacity - 1 - i);
     device.queue.writeBuffer(buffers.freeStack, 0, free);
-    device.queue.writeBuffer(buffers.counters, 0, new Uint32Array([opts.capacity, 0])); // freeTop, requestCount
+    device.queue.writeBuffer(buffers.counters, 0, new Uint32Array([opts.capacity, 0, 0])); // freeTop, requestCount, burstCount
 
     const storage = (type: GPUBufferBindingType): GPUBindGroupLayoutEntry["buffer"] => ({ type });
     const mainLayout = device.createBindGroupLayout({
@@ -279,10 +307,11 @@ function createBuffers(device: GPUDevice, capacity: number) {
   return {
     particles: buffer("state", capacity * PARTICLE_BYTES, STORAGE | COPY_SRC), // COPY_SRC: test readback
     freeStack: buffer("freeStack", capacity * 4, STORAGE | COPY_DST | COPY_SRC),
-    counters: buffer("counters", 8, STORAGE | COPY_DST | COPY_SRC),
+    counters: buffer("counters", 12, STORAGE | COPY_DST | COPY_SRC),
     requests: buffer("requests", MAX_REQUESTS * REQUEST_BYTES, STORAGE | COPY_DST),
     params: buffer("params", PARAMS_BYTES, UNIFORM | COPY_DST),
     emitArgs: buffer("emitArgs", 12, STORAGE | INDIRECT),
     aliveRead: buffer("aliveRead", 4, MAP_READ | COPY_DST), // Q8: freeTop copied here for getStats
+    burstRead: buffer("burstRead", 4, MAP_READ | COPY_DST), // Step 18 Q2: burstCount copied here every tick
   };
 }

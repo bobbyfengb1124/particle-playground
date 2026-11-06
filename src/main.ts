@@ -4,6 +4,8 @@ import { DEFAULT_CELL_SIZE, DEFAULT_GRAVITY, DEFAULT_PARTICLE_CAPACITY, Simulati
 import { CpuBackend } from "./backend/cpu/CpuBackend";
 import { GpuBackend } from "./backend/gpu/GpuBackend";
 import type { SimBackend } from "./backend/SimBackend";
+import { SoundDirector } from "./audio/SoundDirector";
+import { WebAudioSynth } from "./audio/WebAudioSynth";
 import { createFixedTimestepLoop } from "./core/Clock";
 import type { CanvasPoint } from "./input/PointerInput";
 import { PointerInput } from "./input/PointerInput";
@@ -145,6 +147,10 @@ const readoutContainer = document.querySelector<HTMLDivElement>("#readout");
 if (!readoutContainer) throw new Error("missing #readout container");
 const readout = createReadout(readoutContainer, sim);
 
+// Step 18: the director decides what to play; the synth plays it. Audio starts on the first click or key press (Q4).
+const director = new SoundDirector();
+const synth = new WebAudioSynth();
+
 const clock = createFixedTimestepLoop({
   simHz: 60,
   update: (dt) => sim.tick(dt),
@@ -153,11 +159,14 @@ const clock = createFixedTimestepLoop({
     readout.tick();
     overlay.syncBrushSlider();
     overlay.syncZoneCount();
+    synth.setEnabled(sim.soundEnabled); // Q20: mute lands within a frame of unticking
+    synth.play(director.update(sim.takeSoundEvents(), sim.isPaused, sim.soundEnabled, performance.now()));
   },
 });
 
 gpuBackend?.onDeviceLost(() => {
   clock.stop();
+  synth.suspend(); // the render loop stops too, so without this the last crackle clicks could ring on
   showBanner("GPU device lost — reload");
 });
 

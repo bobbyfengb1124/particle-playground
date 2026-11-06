@@ -14,6 +14,13 @@ export interface BackendStats {
   gpuMs?: GpuMs | null;
 }
 
+export interface BackendSoundEvents {
+  /** Apex bursts since the last takeSoundEvents() (crossette splits not counted). */
+  bursts: number;
+  /** Burning area in px² (fire cells × cellSize²) as of the last count, ~250 ms old, so a fire sounds the same at every cell size. */
+  fireArea: number;
+}
+
 /**
  * The grid + particle engine behind Simulation. Simulation keeps the UI state
  * (AppState, zones, hover/draft overlays) and talks to the engine only
@@ -31,11 +38,14 @@ export interface SimBackend {
   paintBrush(bx: number, by: number, radius: number, material: MaterialIdValue): void;
   clearGrid(): void;
   spawnParticlesAt(x: number, y: number, count: number): void;
-  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, density: number): void;
+  /** False if the backend refused it (no free slot / over the request cap), so there's no whoosh (Step 18 Q13). */
+  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, density: number): boolean;
   setWindZones(zones: readonly WindZone[]): void;
   /** Cells and particles only, drawn onto the backend's own #scene canvas; the UI overlays stay in Simulation. */
   renderScene(lighting: boolean, frame: number): void;
   getStats(): BackendStats;
+  /** Sound events since the last call (Step 18 Q10): drains the burst count, so only one caller (the sound update) may use it. */
+  takeSoundEvents(): BackendSoundEvents;
   /** Async because the GPU backend copies its cells back from the device. Wind zones aren't included. */
   exportCells(): Promise<SceneData>;
   /** Wind zones in `scene` are ignored; Simulation handles those. */

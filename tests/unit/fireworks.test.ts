@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { Simulation } from "../../src/app/Simulation";
 import { EmberBehavior, FireworkColor, FireworkPattern, ParticleKind, type FireworkColorValue } from "../../src/core/types";
 import { Material } from "../../src/grid/materials";
-import { FIREWORK_COLOR_PRESETS } from "../../src/particles/fireworks";
+import { createRng } from "../../src/core/Rng";
+import { FIREWORK_COLOR_PRESETS, launchRocket, updateFireworkBehaviors } from "../../src/particles/fireworks";
 import type { Particle } from "../../src/particles/Particle";
+import { ParticleSystem } from "../../src/particles/ParticleSystem";
 
 /** Ticks `sim` until at least one ember exists (i.e. some rocket has burst), or throws if it never does. */
 function tickUntilEmbersAppear(sim: Simulation, maxTicks = 600): void {
@@ -231,6 +233,33 @@ describe("Fireworks: colours", () => {
       return embers(sim).map((p) => [p.x, p.y, p.vx, p.vy, p.radius, p.lifespan]);
     };
     expect(motion(FireworkColor.PURPLE)).toEqual(motion(FireworkColor.GOLD));
+  });
+});
+
+describe("Fireworks: burst count (Step 18, for the boom sound)", () => {
+  // Called directly, without ParticleSystem.update, so a rocket's vy stays what launchRocket set: -speed.
+  it("counts a rocket once, on the tick it bursts, and not while it rises", () => {
+    const particles = new ParticleSystem(1000);
+    const rng = createRng(1);
+    launchRocket(particles, 100, 300, 400, FireworkPattern.RING, FireworkColor.GOLD); // vy -400: still rising
+    launchRocket(particles, 200, 300, 0, FireworkPattern.RING, FireworkColor.GOLD); // vy -0 ≥ 0: at its apex
+
+    expect(updateFireworkBehaviors(particles, 1 / 60, rng)).toBe(1);
+    expect(updateFireworkBehaviors(particles, 1 / 60, rng)).toBe(0); // the burst rocket is gone; the other still rises
+  });
+
+  it("crossette splits are not counted as bursts", () => {
+    const particles = new ParticleSystem(1000);
+    const rng = createRng(2);
+    launchRocket(particles, 200, 300, 0, FireworkPattern.CROSSETTE, FireworkColor.GOLD);
+    expect(updateFireworkBehaviors(particles, 1 / 60, rng)).toBe(1);
+
+    const beforeSplits = particles.activeCount;
+    particles.forEachActive((p) => {
+      p.age = p.lifespan * 0.99; // past CROSSETTE_SPLIT_FRACTION, so every crossette ember splits this call
+    });
+    expect(updateFireworkBehaviors(particles, 1 / 60, rng)).toBe(0);
+    expect(particles.activeCount).toBeGreaterThan(beforeSplits); // the splits did happen
   });
 });
 

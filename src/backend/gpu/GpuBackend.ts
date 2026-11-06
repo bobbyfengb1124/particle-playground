@@ -9,7 +9,7 @@ import { GpuTimer } from "../../gpu/GpuTimer";
 import type { MaterialIdValue } from "../../grid/materials";
 import { REFERENCE_CELL_SIZE, type SceneData } from "../../grid/scene";
 import { WindField, type WindZone } from "../../wind/WindField";
-import type { BackendStats, SimBackend } from "../SimBackend";
+import type { BackendSoundEvents, BackendStats, SimBackend } from "../SimBackend";
 
 /** Particle slots on the GPU (Q13): 2^18, enough for dense firework bursts. */
 const GPU_PARTICLE_CAPACITY = 262_144;
@@ -83,6 +83,7 @@ export class GpuBackend implements SimBackend {
   }
 
   private pendingStamps: Stamp[] = [];
+  private lastBurstCount = 0; // GpuParticles.burstCount at the last takeSoundEvents()
 
   /** Queued, not painted yet: a drag makes dozens of stamps per frame, and flushStamps() sends them all in one paint() at the next tick or render. */
   paintBrush(bx: number, by: number, radius: number, material: MaterialIdValue): void {
@@ -122,9 +123,9 @@ export class GpuBackend implements SimBackend {
   }
 
   /** One ROCKET request, straight up like CPU launchRocket. Density travels as log2 in the flags (Q11), so 16× is stored as 4. */
-  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, density: number): void {
+  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, density: number): boolean {
     const flags = packFlags(ParticleKind.ROCKET, pattern, color, Math.log2(density));
-    this.particles.request({ x, y, vx: 0, vy: -speed, flags, count: 1 });
+    return this.particles.request({ x, y, vx: 0, vy: -speed, flags, count: 1 });
   }
 
   /** Rebuilds the per-cell zone wind and uploads it; only called when zones change (draw, Clear Zones, Load). */
@@ -143,6 +144,14 @@ export class GpuBackend implements SimBackend {
       activeCellCount: this.grid.nonEmptyCount,
       gpuMs: this.timer ? this.timer.takeMs() : null,
     };
+  }
+
+  /** Bursts are the growth of the GPU's cumulative counter since the last call; >>> 0 keeps the difference right if the u32 wraps. */
+  takeSoundEvents(): BackendSoundEvents {
+    const total = this.particles.burstCount;
+    const bursts = (total - this.lastBurstCount) >>> 0;
+    this.lastBurstCount = total;
+    return { bursts, fireArea: this.grid.fireCellCount * this.cellSize ** 2 };
   }
 
   /** Flushes queued stamps first, so a Save straight after painting includes them. Same shape as serializeScene's output. */

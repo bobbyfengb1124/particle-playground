@@ -30,6 +30,10 @@ The simulation runs on the GPU (WebGPU) when the browser has a real GPU adapter,
 - `?backend=cpu` / `?backend=gpu` forces a backend. A forced `gpu` with no WebGPU shows a "WebGPU unavailable — running on CPU" banner. Any other value acts like no param.
 - `?cell=1|2|4` sets the cell size in pixels (default: 1 on GPU, 4 on CPU).
 
+## Sound
+
+Launches whoosh, bursts boom, and fire crackles. Browsers only allow audio after a user gesture, so sound starts on your first click or key press. The "Sound" checkbox mutes it.
+
 ## Readout
 
 On the GPU, `GPU: sim X ms · draw Y ms` is the GPU time per frame, averaged since the last refresh, or `n/a` when the browser has no timestamp queries. Chrome rounds GPU timestamps to 0.1 ms; enable `chrome://flags/#enable-webgpu-developer-features` for exact numbers.

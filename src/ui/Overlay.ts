@@ -234,6 +234,19 @@ function createLightingToggle(container: HTMLElement, sim: Simulation): void {
   container.appendChild(label);
 }
 
+/** Step 18 Q4: on/off for sound effects. Sound-only, so it never changes what the sim does. */
+function createSoundToggle(container: HTMLElement, sim: Simulation): void {
+  const label = document.createElement("label");
+  label.id = "sound-label";
+  const checkbox = document.createElement("input");
+  checkbox.id = "sound-toggle";
+  checkbox.type = "checkbox";
+  checkbox.checked = sim.soundEnabled;
+  checkbox.addEventListener("change", () => sim.setSoundEnabled(checkbox.checked));
+  label.append(checkbox, "Sound");
+  container.appendChild(label);
+}
+
 /**
  * Wires real HTML controls into `container`, calling only Simulation's public
  * methods — never reaching into ParticleSystem/Grid directly. Keeps the UI a
@@ -288,6 +301,7 @@ export function createOverlay(container: HTMLElement, sim: Simulation): { syncBr
   createLoadButton(container, sim);
   createPauseButton(container, sim);
   createLightingToggle(container, sim);
+  createSoundToggle(container, sim);
 
   return {
     // Reflects brush-size changes made via scroll/pinch, which bypass this slider's own "input" event.

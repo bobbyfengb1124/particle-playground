@@ -3,6 +3,7 @@
 struct Counters {
   freeTop: atomic<u32>,      // slots on the free stack; alive particles = capacity - freeTop
   requestCount: atomic<u32>, // requests in `requests` this tick (CPU-uploaded first, then GPU-appended)
+  burstCount: atomic<u32>,   // apex bursts since start, for the boom sound; never reset, the CPU diffs it
 }
 
 // One spawn request (32 bytes, Q3): the emit pass turns it into `count` particles.
@@ -237,6 +238,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
     burst.count = EMBER_COUNT << density;
     burst.speed = EMBER_BASE_SPEED;
     appendRequest(burst);
+    atomicAdd(&counters.burstCount, 1u);
     releaseSlot(slot);
     return;
   }

@@ -19,6 +19,10 @@
 // `?backend=gpu`. The GPU pass needs a real GPU: SwiftShader (software
 // WebGPU, fine for `npm run test:gpu`) runs the full page at ~1 FPS, too slow
 // for the timed steps, so with no usable GPU the pass fails its readout check.
+//
+// Step 18 adds the Sound checkbox: it must start ticked, and the firework
+// launches run with it both on and off (no audio is heard or measured
+// headless; the console-error check catches Web Audio exceptions).
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -76,6 +80,11 @@ async function runCheck(browser, backend) {
   if (backend === "gpu") await waitForReadout(page, /GPU: sim \d+\.\d ms · draw \d+\.\d ms/);
   log("readout text:", await page.locator("#readout").textContent());
   await shot(page, "readout-visible");
+
+  // Step 18 Q11 — the Sound checkbox exists and starts ticked.
+  const soundTicked = await page.isChecked("#sound-toggle");
+  log("sound toggle ticked:", soundTicked);
+  if (!soundTicked) errors.push("sound: #sound-toggle not ticked by default");
 
   const canvas = page.locator("#scene");
   const box = await canvas.boundingBox();
@@ -224,6 +233,7 @@ async function runCheck(browser, backend) {
   }
 
   for (const pattern of ["Ring", "Willow", "Crossette", "Strobe"]) {
+    if (pattern === "Willow") await page.uncheck("#sound-toggle"); // Q11: one shell muted, the rest with sound on
     await page.click(`#firework-patterns button:has-text('${pattern}')`);
     await launch(box.height * 0.5); // max-power drag -> bursts near the top
     await page.waitForTimeout(900); // ~time-to-apex for a max-power shot
@@ -244,6 +254,7 @@ async function runCheck(browser, backend) {
       await shot(page, "firework-strobe-flicker-b");
     }
     await page.waitForTimeout(1500); // let it fully clear before the next launch
+    if (pattern === "Willow") await page.check("#sound-toggle");
   }
 
   // Low-height burst directly over painted wood should ignite it.

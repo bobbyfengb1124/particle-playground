@@ -11,6 +11,22 @@ beforeAll(async () => {
 afterAll(() => device?.destroy());
 
 describe("GpuGrid nonEmptyCount", () => {
+  it("counts fire cells in the same pass (Step 18 Q3)", async () => {
+    const grid = await GpuGrid.create(device, 97, 65, 1);
+    const material = new Uint8Array(97 * 65).fill(Material.STONE);
+    for (let i = 0; i < 37; i++) material[i * 97 + 40] = Material.FIRE; // a column of fire through the stone
+    await gpuChecked(device, async () => {
+      grid.upload(material, new Uint16Array(material.length));
+      grid.step(); // call 0: counted after the step, so compare with what the step left
+      const after = await grid.readback();
+      const fire = after.material.filter((m) => m === Material.FIRE).length;
+      expect(fire).toBeGreaterThan(0);
+      expect(grid.fireCellCount).toBe(fire);
+      expect(grid.nonEmptyCount).toBe(after.material.filter((m) => m !== Material.EMPTY).length);
+    });
+    grid.destroy();
+  });
+
   it("counts non-empty cells on the first step() and every 15th after", async () => {
     // 97×65 isn't a multiple of 8, so edge workgroups have threads outside the grid.
     const grid = await GpuGrid.create(device, 97, 65, 1);

@@ -12,9 +12,11 @@ import type { Particle } from "../../particles/Particle";
 import { renderParticles } from "../../particles/ParticleRenderer";
 import { ParticleSystem } from "../../particles/ParticleSystem";
 import { WindField, type WindZone } from "../../wind/WindField";
-import type { BackendStats, SimBackend } from "../SimBackend";
+import type { BackendSoundEvents, BackendStats, SimBackend } from "../SimBackend";
 
 const DEFAULT_DRAG_COEF = 0.8; // 1/s — applied to every click-spawned particle
+/** Fire cell count every this many ticks: ~250 ms at 60 ticks/s, as GpuGrid's COUNT_READ_INTERVAL (Step 18 Q3). */
+const FIRE_COUNT_INTERVAL = 15;
 
 export interface CpuBackendOptions {
   width: number; // canvas pixels
@@ -48,6 +50,9 @@ export class CpuBackend implements SimBackend {
   private readonly lightMap: LightMap;
   private readonly canvas: HTMLCanvasElement | undefined;
   private ctx: CanvasRenderingContext2D | null = null;
+  private tickCount = 0;
+  private fireCells = 0;
+  private bursts = 0; // since the last takeSoundEvents()
 
   constructor(opts: CpuBackendOptions) {
     this.width = opts.width;
@@ -75,11 +80,18 @@ export class CpuBackend implements SimBackend {
       windField: this.windField,
       bounds: this.bounds,
     });
-    updateFireworkBehaviors(this.particles, dt, this.particleRng);
+    this.bursts += updateFireworkBehaviors(this.particles, dt, this.particleRng);
     this.igniteEmbersOnLanding();
     for (let i = 0; i < this.tickScale; i++) {
       this.gridStepper.step(this.grid, this.gridRng, this.windField.values, globalWind, this.tickScale);
     }
+    if (this.tickCount % FIRE_COUNT_INTERVAL === 0) this.fireCells = this.grid.countMaterial(Material.FIRE);
+    this.tickCount++;
+  }
+
+  /** FIRE cells as of the last count, for the crackle (Step 18 Q3): up to ~250 ms old, as GpuGrid.fireCellCount. */
+  get fireCellCount(): number {
+    return this.fireCells;
   }
 
   /** A falling ember that reaches a non-empty grid cell is consumed — igniting the cell if it's flammable, just settling into it otherwise. */
@@ -127,8 +139,8 @@ export class CpuBackend implements SimBackend {
     }
   }
 
-  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, _density: number): void {
-    launchRocket(this.particles, x, y, speed, pattern, color);
+  launchRocket(x: number, y: number, speed: number, pattern: FireworkPatternValue, color: FireworkColorValue, _density: number): boolean {
+    return launchRocket(this.particles, x, y, speed, pattern, color);
   }
 
   setWindZones(zones: readonly WindZone[]): void {
@@ -159,6 +171,12 @@ export class CpuBackend implements SimBackend {
 
   getStats(): BackendStats {
     return { particleCount: this.particles.activeCount, activeCellCount: this.grid.activeCount };
+  }
+
+  takeSoundEvents(): BackendSoundEvents {
+    const events = { bursts: this.bursts, fireArea: this.fireCells * this.cellSize ** 2 };
+    this.bursts = 0;
+    return events;
   }
 
   exportCells(): Promise<SceneData> {
