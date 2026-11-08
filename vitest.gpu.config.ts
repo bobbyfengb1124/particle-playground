@@ -1,4 +1,4 @@
-/// <reference types="@vitest/browser/providers/playwright" />
+import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
 // GPU tests run inside headless Chromium. Playwright's default headless shell has no
@@ -13,18 +13,17 @@ export default defineConfig({
     testTimeout: 60_000,
     browser: {
       enabled: true,
-      provider: "playwright",
-      name: "chromium",
-      headless: true,
-      screenshotFailures: false,
-      providerOptions: {
-        launch: {
+      provider: playwright({
+        launchOptions: {
           channel: "chromium",
           args: hardware
             ? ["--enable-unsafe-webgpu"]
             : ["--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--use-webgpu-adapter=swiftshader"],
         },
-      },
+      }),
+      instances: [{ browser: "chromium" }],
+      headless: true,
+      screenshotFailures: false,
     },
   },
 });
